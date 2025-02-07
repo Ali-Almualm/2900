@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}BoockMe - Timetable{% endblock %}
+
+{% block content %}
+    <h2>Today's Timetable (15-Minute Slots)</h2>
+    <table>
+        <tr>
+            <th>Time Slot</th>
+            <th>Status</th>
+            <th>Booked By</th>
+            <th>Activity</th>
+        </tr>
+        {% for slot in timetable %}
+        <tr class="time-slot {% if slot.status == 'Available' %}clickable{% endif %}" 
+            data-time="{{ slot.time_slot }}" 
+            {% if slot.status == "Available" %}onclick="openBookingForm('{{ slot.time_slot }}')"{% endif %}>
+            <td>{{ slot.time_slot }}</td>
+            <td {% if slot.status == "Booked" %}style="color: red;"{% else %}style="color: green;"{% endif %}>
+                {{ slot.status }}
+            </td>
+            <td>{{ slot.name|default:"-" }}</td>
+            <td>{{ slot.booking_type|default:"-" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- Booking Form Overlay -->
+    <div id="booking-overlay" class="overlay">
+        <div class="overlay-content">
+            <span class="close" onclick="closeBookingForm()">&times;</span>
+            <h2>Book Time Slot</h2>
+            <form id="booking-form">
+                <input type="hidden" id="selected-time" name="start_time">
+                
+                <label for="user">User ID:</label>
+                <input type="text" id="user" name="user" required>
+                
+                <label for="name">Your Name:</label>
+                <input type="text" id="name" name="name" required>
+
+                <label for="booking_type">Activity:</label>
+                <select id="booking_type" name="booking_type" required>
+                    <option value="pool">Pool</option>
+                    <option value="switch">Nintendo Switch</option>
+                    <option value="table_tennis">Table Tennis</option>
+                </select>
+
+                <button type="submit">Book Slot</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Attach click event to all available slots
+        document.querySelectorAll(".clickable").forEach(slot => {
+            slot.addEventListener("click", function () {
+                let timeSlot = this.getAttribute("data-time");
+                openBookingForm(timeSlot);
+            });
+        });
+    });
+
+    function openBookingForm(timeSlot) {
+        document.getElementById("selected-time").value = timeSlot;
+        document.getElementById("booking-overlay").style.display = "flex";
+    }
+
+    function closeBookingForm() {
+        document.getElementById("booking-overlay").style.display = "none";
+    }
+
+    document.getElementById("booking-form").addEventListener("submit", function (event) {
+        event.preventDefault();
+        const formData = new FormData(this);
+
+        fetch("{% url 'api_book' %}", {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(Object.fromEntries(formData))
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            closeBookingForm();
+            location.reload();
+        })
+        .catch(error => console.error("Error:", error));
+    });
+</script>
+{% endblock %}
