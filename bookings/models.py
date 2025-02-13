@@ -16,6 +16,7 @@ class Booking(models.Model):
 
     class Meta:
         db_table = "bookings"  # Ensures Django uses the correct table name
+        unique_together = ('start_time', 'booking_type')  # ✅ Allows different activities at the same time
 
     def __str__(self):
         return f"{self.name} - {self.booking_type} ({self.start_time} to {self.end_time})"

@@ -12,7 +12,7 @@ def api_book(request):
         data = json.loads(request.body)
         
         start_time_str = data.get("start_time")
-        user = data.get("user")
+        user_id = data.get("user_id")
         name = data.get("name")
         booking_type = data.get("booking_type")
 
@@ -28,7 +28,7 @@ def api_book(request):
 
             # Create booking
             Booking.objects.create(
-                user=user,
+                user_id=user_id,
                 name=name,
                 start_time=start_time,
                 end_time=end_time,
