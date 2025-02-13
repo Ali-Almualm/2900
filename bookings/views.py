@@ -44,8 +44,8 @@ def index(request):
 
     # Generate time slots from 09:00 to 21:00 in 15-minute increments
     time_slots = []
-    start_time = datetime.combine(today, datetime.min.time()).replace(hour=9, minute=0)  # 9:00 AM
-    end_time = datetime.combine(today, datetime.min.time()).replace(hour=21, minute=0)  # 9:00 PM
+    start_time = datetime.combine(today, datetime.min.time()).replace(hour=0, minute=0)  # 9:00 AM
+    end_time = datetime.combine(today, datetime.min.time()).replace(hour=23, minute=59)  # 9:00 PM
 
     while start_time < end_time:
         time_slots.append((today, start_time.strftime("%H:%M") + " - " + (start_time + timedelta(minutes=15)).strftime("%H:%M")))

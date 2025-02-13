@@ -79,6 +79,7 @@
         function closeBookingForm() {
             console.log("Closing booking form");
             document.getElementById("booking-overlay").style.display = "none";
+            document.getElementById("booking-form").reset();
         }
 
         document.getElementById("booking-form").addEventListener("submit", function (event) {
