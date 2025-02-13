@@ -3,7 +3,12 @@
 {% block title %}BoockMe - Timetable{% endblock %}
 
 {% block content %}
-    <h2>Today's Timetable (15-Minute Slots)</h2>
+    <h2>Timetable (15-Minute Slots)</h2>
+
+    <!-- Date Selector -->
+    <label for="selected-date">Select Date:</label>
+    <input type="date" id="selected-date" value="{{ selected_date }}" onchange="changeDate()">
+    
     <table>
         <tr>
             <th>Time Slot</th>
@@ -13,7 +18,7 @@
         </tr>
         {% for slot in timetable %}
         <tr class="time-slot {% if slot.status == 'Available' %}clickable{% endif %}" 
-            data-time="{{ slot.time_slot }}">
+            data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}">
             <td>{{ slot.time_slot }}</td>
             <td {% if slot.status == "Booked" %}style="color: red;"{% else %}style="color: green;"{% endif %}>
                 {{ slot.status }}
@@ -25,54 +30,61 @@
     </table>
 
     <!-- Booking Form Overlay -->
-<div id="booking-overlay" class="overlay">
-    <div class="overlay-content">
-        <span class="close" onclick="closeBookingForm()">&times;</span>
-        <h2>Book Time Slot</h2>
-        <form id="booking-form">
-            <div class="form-group">
-                <label for="selected-time">Selected Time:</label>
-                <input type="text" id="selected-time" name="start_time" readonly>
-            </div>
+    <div id="booking-overlay" class="overlay">
+        <div class="overlay-content">
+            <span class="close" onclick="closeBookingForm()">&times;</span>
+            <h2>Book Time Slot</h2>
+            <form id="booking-form">
+                <div class="form-group">
+                    <label for="selected-date-display">Selected Date:</label>
+                    <input type="text" id="selected-date-display" name="booking_date" readonly>
+                </div>
 
-            <div class="form-group">
-                <label for="user_id">Email:</label>
-                <input type="text" id="user_id" name="user_id" required>
-            </div>
+                <div class="form-group">
+                    <label for="selected-time">Selected Time:</label>
+                    <input type="text" id="selected-time" name="start_time" readonly>
+                </div>
 
-            <div class="form-group">
-                <label for="name">Name:</label>
-                <input type="text" id="name" name="name" required>
-            </div>
+                <div class="form-group">
+                    <label for="user_id">Email:</label>
+                    <input type="text" id="user_id" name="user_id" required>
+                </div>
 
-            <div class="form-group">
-                <label for="booking_type">Activity:</label>
-                <select id="booking_type" name="booking_type" required>
-                    <option value="pool">Pool</option>
-                    <option value="switch">Nintendo Switch</option>
-                    <option value="table_tennis">Table Tennis</option>
-                </select>
-            </div>
+                <div class="form-group">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="name" required>
+                </div>
 
-            <button type="submit">Book Slot</button>
-        </form>
+                <div class="form-group">
+                    <label for="booking_type">Activity:</label>
+                    <select id="booking_type" name="booking_type" required>
+                        <option value="pool">Pool</option>
+                        <option value="switch">Nintendo Switch</option>
+                        <option value="table_tennis">Table Tennis</option>
+                    </select>
+                </div>
+
+                <button type="submit">Book Slot</button>
+            </form>
+        </div>
     </div>
-</div>
 
-    <!-- ✅ JavaScript to Handle Booking -->
+    <!-- JavaScript -->
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             document.querySelectorAll(".clickable").forEach(slot => {
                 slot.addEventListener("click", function () {
                     let timeSlot = this.getAttribute("data-time");
-                    openBookingForm(timeSlot);
+                    let dateSlot = document.getElementById("selected-date").value || "{{ selected_date|date:'Y-m-d' }}";
+                    openBookingForm(timeSlot, dateSlot);
                 });
             });
         });
 
-        function openBookingForm(timeSlot) {
-            console.log("Opening booking form for:", timeSlot);
+        function openBookingForm(timeSlot, dateSlot) {
+            console.log("Opening booking form for:", dateSlot, timeSlot);
             document.getElementById("selected-time").value = timeSlot;
+            document.getElementById("selected-date-display").value = dateSlot;
             document.getElementById("booking-overlay").style.display = "flex";
         }
 
@@ -80,6 +92,11 @@
             console.log("Closing booking form");
             document.getElementById("booking-overlay").style.display = "none";
             document.getElementById("booking-form").reset();
+        }
+
+        function changeDate() {
+            let selectedDate = document.getElementById("selected-date").value;
+            window.location.href = "?date=" + selectedDate;
         }
 
         document.getElementById("booking-form").addEventListener("submit", function (event) {

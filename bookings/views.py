@@ -1,5 +1,4 @@
-from django.shortcuts import render
-
+from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
@@ -15,23 +14,25 @@ def api_book(request):
         user_id = data.get("user_id")
         name = data.get("name")
         booking_type = data.get("booking_type")
+        selected_date_str = data.get("booking_date")  # ✅ Get selected date from frontend
 
         try:
-            start_time = datetime.strptime(start_time_str.split(" - ")[0], "%H:%M")
-            today = datetime.now().date()
-            start_time = datetime.combine(today, start_time.time())
-            end_time = start_time + timedelta(minutes=15)
+            # Convert date and time to datetime object
+            selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d").date()
+            start_time = datetime.strptime(start_time_str.split(" - ")[0], "%H:%M").time()
+            start_datetime = datetime.combine(selected_date, start_time)
+            end_datetime = start_datetime + timedelta(minutes=15)
 
-            # Check if slot is already booked
-            if Booking.objects.filter(start_time=start_time).exists():
-                return JsonResponse({"message": "This slot is already booked!"}, status=400)
+            # Check if slot is already booked for the same activity type
+            if Booking.objects.filter(start_time=start_datetime, booking_type=booking_type).exists():
+                return JsonResponse({"message": "This slot is already booked for this activity!"}, status=400)
 
             # Create booking
             Booking.objects.create(
                 user_id=user_id,
                 name=name,
-                start_time=start_time,
-                end_time=end_time,
+                start_time=start_datetime,
+                end_time=end_datetime,
                 booking_type=booking_type
             )
             return JsonResponse({"message": "Booking created!"})
@@ -39,20 +40,21 @@ def api_book(request):
             return JsonResponse({"message": f"Error: {str(e)}"}, status=400)
 
 def index(request):
-    # Define today's date
-    today = datetime.now().date()
+    # ✅ Get the selected date from query parameters (defaults to today)
+    date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
+    selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-    # Generate time slots from 09:00 to 21:00 in 15-minute increments
+    # Generate time slots for the selected date
     time_slots = []
-    start_time = datetime.combine(today, datetime.min.time()).replace(hour=0, minute=0)  # 9:00 AM
-    end_time = datetime.combine(today, datetime.min.time()).replace(hour=23, minute=59)  # 9:00 PM
+    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
+    end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
 
     while start_time < end_time:
-        time_slots.append((today, start_time.strftime("%H:%M") + " - " + (start_time + timedelta(minutes=15)).strftime("%H:%M")))
-        start_time += timedelta(minutes=15)  # Move to next 15-minute slot
+        time_slots.append((selected_date, start_time.strftime("%H:%M") + " - " + (start_time + timedelta(minutes=15)).strftime("%H:%M")))
+        start_time += timedelta(minutes=15)
 
-    # Fetch today's bookings
-    bookings = Booking.objects.filter(start_time__date=today)
+    # Fetch bookings for the selected date
+    bookings = Booking.objects.filter(start_time__date=selected_date)
 
     # Prepare the timetable with booking statuses
     timetable = []
@@ -71,10 +73,10 @@ def index(request):
             "booking_type": booked.booking_type if booked else None
         })
 
-    return render(request, 'bookings/index.html', {"timetable": timetable})
+    return render(request, 'bookings/index.html', {"timetable": timetable, "selected_date": selected_date})
 
 def book(request):
-    return render(request, 'bookings/book.html')  # ✅ Corrected path
+    return render(request, 'bookings/book.html')
 
 def cancel_booking(request, booking_id):
     Booking.objects.filter(id=booking_id).delete()
