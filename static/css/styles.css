@@ -11,6 +11,15 @@
     align-items: center;
 }
 
+.timetable-container {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    align-items: flex-start;
+}
+
+
 /* Style the overlay content box */
 .overlay-content {
     background: white;

@@ -1,33 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}BoockMe - Timetable{% endblock %}
+{% block title %}BookMe - Timetable{% endblock %}
 
 {% block content %}
     <h2>Timetable (15-Minute Slots)</h2>
 
     <!-- Date Selector -->
     <label for="selected-date">Select Date:</label>
-    <input type="date" id="selected-date" value="{{ selected_date }}" onchange="changeDate()">
-    
-    <table>
-        <tr>
-            <th>Time Slot</th>
-            <th>Status</th>
-            <th>Booked By</th>
-            <th>Activity</th>
-        </tr>
-        {% for slot in timetable %}
-        <tr class="time-slot {% if slot.status == 'Available' %}clickable{% endif %}" 
-            data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}">
-            <td>{{ slot.time_slot }}</td>
-            <td {% if slot.status == "Booked" %}style="color: red;"{% else %}style="color: green;"{% endif %}>
-                {{ slot.status }}
-            </td>
-            <td>{{ slot.name|default:"-" }}</td>
-            <td>{{ slot.booking_type|default:"-" }}</td>
-        </tr>
+    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
+
+    <!-- Parent container for horizontal layout -->
+    <div class="timetable-container">
+        {% for activity, slots in timetable_by_activity.items %}
+            <div class="timetable">
+                <h3>
+                    {% if activity == "pool" %}Pool
+                    {% elif activity == "switch" %}Nintendo Switch
+                    {% elif activity == "table_tennis" %}Table Tennis
+                    {% endif %}
+                </h3>
+                <table>
+                    <tr>
+                        <th>Time Slot</th>
+                        <th>Status</th>
+                        <th>Booked By</th>
+                        <th>Action</th>
+                    </tr>
+                    {% for slot in slots %}
+                    <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
+                        data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
+                        <td>{{ slot.time_slot }}</td>
+                        <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
+                            {{ slot.status }}
+                        </td>
+                        <td>{{ slot.name|default:"-" }}</td>
+                        <td>
+                            {% if slot.status == "Available" %}
+                                <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
         {% endfor %}
-    </table>
+    </div>
 
     <!-- Booking Form Overlay -->
     <div id="booking-overlay" class="overlay">
@@ -57,11 +74,7 @@
 
                 <div class="form-group">
                     <label for="booking_type">Activity:</label>
-                    <select id="booking_type" name="booking_type" required>
-                        <option value="pool">Pool</option>
-                        <option value="switch">Nintendo Switch</option>
-                        <option value="table_tennis">Table Tennis</option>
-                    </select>
+                    <input type="text" id="booking_type" name="booking_type" readonly>
                 </div>
 
                 <button type="submit">Book Slot</button>
@@ -71,38 +84,29 @@
 
     <!-- JavaScript -->
     <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            document.querySelectorAll(".clickable").forEach(slot => {
-                slot.addEventListener("click", function () {
-                    let timeSlot = this.getAttribute("data-time");
-                    let dateSlot = document.getElementById("selected-date").value || "{{ selected_date|date:'Y-m-d' }}";
-                    openBookingForm(timeSlot, dateSlot);
-                });
-            });
-        });
-
-        function openBookingForm(timeSlot, dateSlot) {
-            console.log("Opening booking form for:", dateSlot, timeSlot);
-            document.getElementById("selected-time").value = timeSlot;
-            document.getElementById("selected-date-display").value = dateSlot;
-            document.getElementById("booking-overlay").style.display = "flex";
+        function changeDate() {
+            let selectedDate = document.getElementById("selected-date").value;
+            console.log("📆 Selected Date from Calendar:", selectedDate); // Debugging
+            window.location.href = "?date=" + selectedDate;
         }
 
+        function openBookingForm(timeSlot, dateSlot, activity) {
+            document.getElementById("selected-time").value = timeSlot;
+            document.getElementById("selected-date-display").value = dateSlot;
+            document.getElementById("booking_type").value = activity;
+            document.getElementById("booking-overlay").style.display = "flex";
+        }
+        
         function closeBookingForm() {
-            console.log("Closing booking form");
             document.getElementById("booking-overlay").style.display = "none";
             document.getElementById("booking-form").reset();
         }
 
-        function changeDate() {
-            let selectedDate = document.getElementById("selected-date").value;
-            window.location.href = "?date=" + selectedDate;
-        }
-
         document.getElementById("booking-form").addEventListener("submit", function (event) {
             event.preventDefault();
+            let selectedDate = document.getElementById("selected-date").value;
             const formData = new FormData(this);
-
+            formData.set("booking_date", selectedDate);
             fetch("{% url 'api_book' %}", {
                 method: "POST",
                 headers: {
@@ -119,5 +123,7 @@
             })
             .catch(error => console.error("Error:", error));
         });
+        
     </script>
+
 {% endblock %}
