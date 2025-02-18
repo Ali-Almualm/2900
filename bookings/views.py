@@ -4,6 +4,8 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from datetime import datetime, timedelta
 from .models import Booking  # ✅ Ensure this is correctly imported
+from .forms import BookingForm
+
 
 @csrf_exempt
 def api_book(request):
@@ -86,8 +88,70 @@ def index(request):
     })
 
 def book(request):
-    return render(request, 'bookings/book.html')
+    activity_type = request.GET.get('activity', 'pool')
+    
+    if request.method == "POST":
+        form = BookingForm(request.POST)
+        if form.is_valid():
+            booking = form.save(commit=False)
+            booking.booking_type = activity_type
+            booking.save()
+            return redirect('index')  # or redirect to a specific activity page
+    else:
+        form = BookingForm()
+
+    return render(request, 'bookings/book.html', {
+        'form': form,
+        'activity': activity_type
+    })
+
 
 def cancel_booking(request, booking_id):
     Booking.objects.filter(id=booking_id).delete()
     return redirect('index')
+
+def activity_view(request, activity_type):
+    # Let user pick the date just like index
+    date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
+    selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+    # Generate 15-min slots from 00:00 to 23:59
+    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
+    end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
+
+    time_slots = []
+    current = start_time
+    while current < end_time:
+        slot_end = current + timedelta(minutes=15)
+        time_slots.append((current.time(), slot_end.time()))
+        current = slot_end
+
+    # Filter bookings for that date & activity
+    bookings = Booking.objects.filter(
+        start_time__date=selected_date,
+        booking_type=activity_type
+    ).order_by('start_time')
+
+    timetable = []
+    for slot_start, slot_end in time_slots:
+        occupied = False
+        booked_by = ""
+        for booking in bookings:
+            # Compare times
+            if booking.start_time.time() == slot_start:
+                occupied = True
+                booked_by = booking.name
+                break
+
+        timetable.append({
+            "time_slot": f"{slot_start.strftime('%H:%M')} - {slot_end.strftime('%H:%M')}",
+            "status": "Booked" if occupied else "Available",
+            "name": booked_by
+        })
+
+    return render(request, 'bookings/activity.html', {
+        "timetable": timetable,
+        "activity": activity_type,
+        "selected_date": selected_date,
+        "title": dict(Booking.BOOKING_TYPES).get(activity_type)
+    })

@@ -1,4 +1,70 @@
-/* Center the overlay */
+/* Body and global text settings */
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background-color: #f9f9f9;
+    color: #333;
+}
+
+/* Headings */
+h1, h2, h3 {
+    margin-bottom: 10px;
+}
+
+/* Navigation links */
+.navigation {
+    margin-bottom: 20px;
+}
+
+.navigation a {
+    margin-right: 10px;
+    text-decoration: none;
+    color: #007bff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid #007bff;
+}
+
+.navigation a:hover {
+    background-color: #007bff;
+    color: #fff;
+}
+
+/* Table container */
+.table-container {
+    margin: 0 auto;
+    width: 90%; /* Adjust width as needed */
+    max-width: 900px; /* Restrict max width for large screens */
+}
+
+/* The timetable table */
+.timetable {
+    border-collapse: collapse;
+    width: 100%;
+    background-color: #fff;
+}
+
+.timetable th, .timetable td {
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    text-align: center;
+}
+
+.timetable thead {
+    background-color: #f2f2f2;
+}
+
+/* Booked vs Available styling */
+.timetable td.status-booked {
+    color: red;
+    font-weight: bold;
+}
+.timetable td.status-available {
+    color: green;
+    font-weight: bold;
+}
+
+/* Overlay (centered popup) */
 .overlay {
     display: none;
     position: fixed;
@@ -11,16 +77,7 @@
     align-items: center;
 }
 
-.timetable-container {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    justify-content: space-around;
-    align-items: flex-start;
-}
-
-
-/* Style the overlay content box */
+/* Overlay content box */
 .overlay-content {
     background: white;
     padding: 20px;
@@ -31,7 +88,7 @@
     position: relative;
 }
 
-/* Style the close button */
+/* Close button in overlay */
 .close {
     position: absolute;
     top: 10px;
@@ -40,24 +97,21 @@
     cursor: pointer;
 }
 
-/* Align labels and inputs */
+/* Form groups */
 .form-group {
     display: flex;
-    align-items: center;  /* Align text and input on the same line */
+    align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
     text-align: left;
     width: 100%;
 }
 
-/* Set a fixed width for labels */
 .form-group label {
-    width: 120px;  /* Fixed width to keep everything aligned */
+    width: 120px; 
     font-weight: bold;
-    text-align: left;
 }
 
-/* Ensure inputs and selects take up the remaining space */
 .form-group input,
 .form-group select {
     flex-grow: 1;
@@ -67,18 +121,17 @@
     font-size: 14px;
 }
 
-/* Style submit button */
+/* Button styling */
 button {
-    width: 100%;
-    padding: 10px;
-    background: #007bff;
-    color: white;
+    background-color: #007bff;
+    color: #fff;
     border: none;
+    padding: 6px 12px;
     border-radius: 4px;
     cursor: pointer;
     margin-top: 10px;
 }
 
 button:hover {
-    background: #0056b3;
+    background-color: #0056b3;
 }

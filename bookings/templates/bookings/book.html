@@ -1,10 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Book a Slot{% endblock %}
 {% block content %}
-    <h2>Book a Slot</h2>
-    <form method="POST">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Book</button>
-    </form>
+  <h2>Book Time Slot</h2>
+  <form method="POST">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Book Slot</button>
+  </form>
 {% endblock %}
