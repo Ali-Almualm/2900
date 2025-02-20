@@ -9,18 +9,29 @@
     <label for="selected-date">Select Date:</label>
     <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
 
-    <!-- Parent container for horizontal layout -->
+    <!-- Add a Toggle Button -->
+    <button onclick="toggleTimetable()">Show/Hide Timetables</button>
+
+    <!-- Parent container for timetables -->
     <div class="timetable-container">
         {% for activity, slots in timetable_by_activity.items %}
-            <div class="timetable">
-                <h3>
-                    {% if activity == "pool" %}Pool
+            <div class="activity-container">
+                <!-- Toggle Button for Each Activity -->
+                <button onclick="toggleActivity('{{ activity }}')">
+                    Show/Hide {% if activity == "pool" %}Pool
                     {% elif activity == "switch" %}Nintendo Switch
                     {% elif activity == "table_tennis" %}Table Tennis
                     {% endif %}
-                    <button onclick="toggleTimetable('{{ activity }}')">Show timetable</button>
-                </h3>
-                <div id="timetable-{{ activity }}" class="timetable-content" style="display: none;">
+                </button>
+
+                <!-- Timetable Section for Each Activity (Initially Hidden) -->
+                <div id="timetable-{{ activity }}" class="timetable" style="display: none;">
+                    <h3>
+                        {% if activity == "pool" %}Pool
+                        {% elif activity == "switch" %}Nintendo Switch
+                        {% elif activity == "table_tennis" %}Table Tennis
+                        {% endif %}
+                    </h3>
                     <table>
                         <tr>
                             <th>Time Slot</th>
@@ -29,11 +40,18 @@
                             <th>Action</th>
                         </tr>
                         {% for slot in slots %}
-                        <tr>
-                            <td>{{ slot.time }}</td>
-                            <td>{{ slot.status }}</td>
-                            <td>{{ slot.booked_by }}</td>
-                            <td><button>Book</button></td>
+                        <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
+                            data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
+                            <td>{{ slot.time_slot }}</td>
+                            <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
+                                {{ slot.status }}
+                            </td>
+                            <td>{{ slot.name|default:"-" }}</td>
+                            <td>
+                                {% if slot.status == "Available" %}
+                                    <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </table>
@@ -42,14 +60,90 @@
         {% endfor %}
     </div>
 
+
+    <!-- Booking Form Overlay -->
+    <div id="booking-overlay" class="overlay">
+        <div class="overlay-content">
+            <span class="close" onclick="closeBookingForm()">&times;</span>
+            <h2>Book Time Slot</h2>
+            <form id="booking-form">
+                <div class="form-group">
+                    <label for="selected-date-display">Selected Date:</label>
+                    <input type="text" id="selected-date-display" name="booking_date" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="selected-time">Selected Time:</label>
+                    <input type="text" id="selected-time" name="start_time" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="user_id">Email:</label>
+                    <input type="text" id="user_id" name="user_id" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="booking_type">Activity:</label>
+                    <input type="text" id="booking_type" name="booking_type" readonly>
+                </div>
+
+                <button type="submit">Book Slot</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
     <script>
-        function toggleTimetable(activity) {
-            var timetableContent = document.getElementById('timetable-' + activity);
-            if (timetableContent.style.display === 'none') {
-                timetableContent.style.display = 'block';
-            } else {
-                timetableContent.style.display = 'none';
-            }
+        function changeDate() {
+            let selectedDate = document.getElementById("selected-date").value;
+            console.log("📆 Selected Date from Calendar:", selectedDate); // Debugging
+            window.location.href = "?date=" + selectedDate;
         }
+
+        function openBookingForm(timeSlot, dateSlot, activity) {
+            document.getElementById("selected-time").value = timeSlot;
+            document.getElementById("selected-date-display").value = dateSlot;
+            document.getElementById("booking_type").value = activity;
+            document.getElementById("booking-overlay").style.display = "flex";
+        }
+        
+        function closeBookingForm() {
+            document.getElementById("booking-overlay").style.display = "none";
+            document.getElementById("booking-form").reset();
+        }
+
+        document.getElementById("booking-form").addEventListener("submit", function (event) {
+            event.preventDefault();
+            let selectedDate = document.getElementById("selected-date").value;
+            const formData = new FormData(this);
+            formData.set("booking_date", selectedDate);
+            fetch("{% url 'api_book' %}", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": "{{ csrf_token }}",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(Object.fromEntries(formData))
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                closeBookingForm();
+                location.reload();
+            })
+            .catch(error => console.error("Error:", error));
+        });
+
+        function toggleActivity(activity) {
+        let timetable = document.getElementById("timetable-" + activity);
+        timetable.style.display = timetable.style.display === "none" ? "block" : "none";
+    }
+        
     </script>
+
 {% endblock %}
