@@ -69,6 +69,7 @@ def index(request):
         start_hour, start_minute = map(int, time_slot.split(" - ")[0].split(":"))
         slot_start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=start_hour, minute=start_minute)
         slot_end_time = slot_start_time + timedelta(minutes=15)
+        
 
         for activity in ACTIVITY_TYPES:
             # ✅ Check if this time slot is booked
@@ -79,6 +80,8 @@ def index(request):
                 "time_slot": time_slot,
                 "status": "Booked" if booked_entry else "Available",
                 "name": booked_entry.name if booked_entry else None,
+                "booking_id": booked_entry.id if booked_entry else None,
+                "user_id": booked_entry.user_id if booked_entry else None,
                 "booking_type": activity
             })
 
@@ -107,8 +110,28 @@ def book(request):
 
 
 def cancel_booking(request, booking_id):
-    Booking.objects.filter(id=booking_id).delete()
-    return redirect('index')
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            user_id_input = data.get("user_id").strip()
+
+            booking = Booking.objects.filter(id=booking_id).first()
+            if not booking:
+                return JsonResponse({"message": "Booking not found"}, status=404)
+
+            stored_user_id = booking.user_id.strip()
+
+            print(f"Received user ID: {user_id_input}")  # Debugging
+            print(f"Stored user ID: {stored_user_id}")   # Debugging
+
+            if user_id_input != stored_user_id:
+                return JsonResponse({"message": "Unauthorized: Incorrect user ID"}, status=403)
+
+            booking.delete()
+            return JsonResponse({"message": "Booking canceled successfully"})
+        except Exception as e:
+            return JsonResponse({"message": f"Error: {str(e)}"}, status=400)
+
 
 def activity_view(request, activity_type):
     # Let user pick the date just like index

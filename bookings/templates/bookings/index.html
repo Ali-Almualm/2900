@@ -44,6 +44,12 @@
                             <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
                                 {{ slot.status }}
                             </td>
+                            <td>
+                                {% if slot.status == "Booked" %}
+                                    <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
+                                {% endif %}
+                            </td>
+                                                    
                             <td>{{ slot.name|default:"-" }}</td>
                             <td>
                                 {% if slot.status == "Available" %}
@@ -141,6 +147,32 @@
         let timetable = document.getElementById("timetable-" + activity);
         timetable.style.display = timetable.style.display === "none" ? "block" : "none";
     }
+
+    function cancelBooking(bookingId, userId) {
+    const userInput = prompt("Enter your email to confirm cancellation:");
+    console.log("User input:", userInput);  // Debugging
+    console.log("Stored user ID:", userId); // Debugging
+
+    if (userInput && userInput.trim() === userId.trim()) {
+        fetch(`/cancel/${bookingId}/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ "user_id": userInput.trim() })  // Ensure trimmed input is sent
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        })
+        .catch(error => console.error("Error:", error));
+    } else {
+        alert("Incorrect email. Cancellation denied.");
+    }
+}
+
         
     </script>
 
