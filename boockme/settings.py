@@ -64,7 +64,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'boockme',
         'USER': 'root',   # Change this to your MySQL username
-        'PASSWORD': 'passord',  # Change this to your MySQL password
+        'PASSWORD': 'newpassword',  # Change this to your MySQL password
         'HOST': 'localhost',
         'PORT': '3306',
     }
@@ -96,7 +96,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, "static"),
+    BASE_DIR / "static",
 ]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

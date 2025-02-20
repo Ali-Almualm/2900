@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Book a Slot{% endblock %}
+{% block title %}Book {{ activity|title }}{% endblock %}
+
 {% block content %}
-    <h2>Book a Slot</h2>
+    <h2>Book {{ activity|title }}</h2>
     <form method="POST">
         {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Book</button>
+        <input type="hidden" name="booking_type" value="{{ activity }}">
+        <!-- Rest of your form -->
     </form>
 {% endblock %}

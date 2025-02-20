@@ -1,9 +1,12 @@
 from django.urls import path
-from .views import index, book, cancel_booking, api_book
+from . import views
 
 urlpatterns = [
-    path('', index, name='index'),
-    path('book/', book, name='book'),
-    path('cancel/<int:booking_id>/', cancel_booking, name='cancel_booking'),
-    path('api/book/', api_book, name='api_book'),
+    path('', views.index, name='index'),
+    path('pool/', views.activity_view, {'activity_type': 'pool'}, name='pool'),
+    path('switch/', views.activity_view, {'activity_type': 'switch'}, name='switch'),
+    path('table-tennis/', views.activity_view, {'activity_type': 'table_tennis'}, name='table_tennis'),
+    path('book/', views.book, name='book'),
+    path('api/book/', views.api_book, name='api_book'),
+    path('cancel/<int:booking_id>/', views.cancel_booking, name='cancel_booking'),
 ]

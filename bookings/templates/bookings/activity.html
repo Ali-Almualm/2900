@@ -1,52 +1,43 @@
 {% extends "base.html" %}
-
-{% block title %}BookMe - Timetable{% endblock %}
+{% load static %}
+{% block title %}{{ title }} Timetable{% endblock %}
 
 {% block content %}
-    <h2>Timetable (15-Minute Slots)</h2>
-
-    <!-- Date Selector -->
+    <h1>{{ title }} Timetable</h1>
+    
     <label for="selected-date">Select Date:</label>
     <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
 
-    <!-- Parent container for horizontal layout -->
-    <div class="timetable-container">
-        {% for activity, slots in timetable_by_activity.items %}
-            <div class="timetable">
-                <h3>
-                    {% if activity == "pool" %}Pool
-                    {% elif activity == "switch" %}Nintendo Switch
-                    {% elif activity == "table_tennis" %}Table Tennis
-                    {% endif %}
-                </h3>
-                <table>
-                    <tr>
-                        <th>Time Slot</th>
-                        <th>Status</th>
-                        <th>Booked By</th>
-                        <th>Action</th>
-                    </tr>
-                    {% for slot in slots %}
-                    <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
-                        data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
-                        <td>{{ slot.time_slot }}</td>
-                        <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
-                            {{ slot.status }}
-                        </td>
-                        <td>{{ slot.name|default:"-" }}</td>
-                        <td>
-                            {% if slot.status == "Available" %}
-                                <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </table>
-            </div>
-        {% endfor %}
+    <div class="table-container">
+        <table class="timetable">
+            <thead>
+                <tr>
+                    <th>Time Slot</th>
+                    <th>Status</th>
+                    <th>Booked By</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for slot in timetable %}
+                <tr>
+                    <td>{{ slot.time_slot }}</td>
+                    <td class="status-{{ slot.status|lower }}">{{ slot.status }}</td>
+                    <td>{{ slot.name }}</td>
+                    <td>
+                        {% if slot.status == "Available" %}
+                            <button 
+                                onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">
+                                Book
+                            </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
-    <!-- Booking Form Overlay -->
     <div id="booking-overlay" class="overlay">
         <div class="overlay-content">
             <span class="close" onclick="closeBookingForm()">&times;</span>
@@ -82,11 +73,10 @@
         </div>
     </div>
 
-    <!-- JavaScript -->
     <script>
         function changeDate() {
             let selectedDate = document.getElementById("selected-date").value;
-            console.log("📆 Selected Date from Calendar:", selectedDate); // Debugging
+            console.log("📆 Selected Date from Calendar:", selectedDate);
             window.location.href = "?date=" + selectedDate;
         }
 
@@ -96,7 +86,7 @@
             document.getElementById("booking_type").value = activity;
             document.getElementById("booking-overlay").style.display = "flex";
         }
-        
+
         function closeBookingForm() {
             document.getElementById("booking-overlay").style.display = "none";
             document.getElementById("booking-form").reset();
@@ -104,9 +94,8 @@
 
         document.getElementById("booking-form").addEventListener("submit", function (event) {
             event.preventDefault();
-            let selectedDate = document.getElementById("selected-date").value;
             const formData = new FormData(this);
-            formData.set("booking_date", selectedDate);
+
             fetch("{% url 'api_book' %}", {
                 method: "POST",
                 headers: {
@@ -123,7 +112,5 @@
             })
             .catch(error => console.error("Error:", error));
         });
-        
     </script>
-
 {% endblock %}
