@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Book {{ activity|title }}{% endblock %}
+
+{% block content %}
+    <h2>Book {{ activity|title }}</h2>
+    <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="booking_type" value="{{ activity }}">
+        <!-- Rest of your form -->
+    </form>
+{% endblock %}

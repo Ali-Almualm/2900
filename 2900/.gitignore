@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+*.venv
+*.env
+*.virtualenv
+Pipfile
+Pipfile.lock
+
+# Django-specific
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# MySQL/MariaDB
+*.sql
+*.db
+*.sql.gz
+my.cnf
+
+# IDE/Editor specific
+.vscode/
+.idea/
+*.iml
+
+# MacOS-specific files
+.DS_Store
+._*
+
+# Node.js (if frontend with Next.js or React)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Docker
+docker-compose.override.yml
+*.dockerfile
+
+# Environment Variables
+.env
+.env.local
+.env.production
+.env.development
