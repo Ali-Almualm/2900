@@ -9,42 +9,61 @@
     <label for="selected-date">Select Date:</label>
     <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
 
-    <!-- Parent container for horizontal layout -->
+
+    <!-- Parent container for timetables -->
     <div class="timetable-container">
         {% for activity, slots in timetable_by_activity.items %}
-            <div class="timetable">
-                <h3>
-                    {% if activity == "pool" %}Pool
+            <div class="activity-container">
+                <!-- Toggle Button for Each Activity -->
+                <button onclick="toggleActivity('{{ activity }}')">
+                    Show/Hide {% if activity == "pool" %}Pool
                     {% elif activity == "switch" %}Nintendo Switch
                     {% elif activity == "table_tennis" %}Table Tennis
                     {% endif %}
-                </h3>
-                <table>
-                    <tr>
-                        <th>Time Slot</th>
-                        <th>Status</th>
-                        <th>Booked By</th>
-                        <th>Action</th>
-                    </tr>
-                    {% for slot in slots %}
-                    <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
-                        data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
-                        <td>{{ slot.time_slot }}</td>
-                        <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
-                            {{ slot.status }}
-                        </td>
-                        <td>{{ slot.name|default:"-" }}</td>
-                        <td>
-                            {% if slot.status == "Available" %}
-                                <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </table>
+                </button>
+
+                <!-- Timetable Section for Each Activity (Initially Hidden) -->
+                <div id="timetable-{{ activity }}" class="timetable" style="display: none;">
+                    <h3>
+                        {% if activity == "pool" %}Pool
+                        {% elif activity == "switch" %}Nintendo Switch
+                        {% elif activity == "table_tennis" %}Table Tennis
+                        {% endif %}
+                    </h3>
+                    <table>
+                        <tr>
+                            <th>Time Slot</th>
+                            <th>Status</th>
+                            <th>Booked By</th>
+                            <th>Action</th>
+                        </tr>
+                        {% for slot in slots %}
+                        <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
+                            data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
+                            <td>{{ slot.time_slot }}</td>
+                            <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
+                                {{ slot.status }}
+                            </td>
+                            <td>
+                                {% if slot.status == "Booked" %}
+                                    <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
+                                {% endif %}
+                            </td>
+                                                    
+                            <td>{{ slot.name|default:"-" }}</td>
+                            <td>
+                                {% if slot.status == "Available" %}
+                                    <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
             </div>
         {% endfor %}
     </div>
+
 
     <!-- Booking Form Overlay -->
     <div id="booking-overlay" class="overlay">
@@ -123,6 +142,37 @@
             })
             .catch(error => console.error("Error:", error));
         });
+
+        function toggleActivity(activity) {
+        let timetable = document.getElementById("timetable-" + activity);
+        timetable.style.display = timetable.style.display === "none" ? "block" : "none";
+    }
+
+    function cancelBooking(bookingId, userId) {
+    const userInput = prompt("Enter your email to confirm cancellation:");
+    console.log("User input:", userInput);  // Debugging
+    console.log("Stored user ID:", userId); // Debugging
+
+    if (userInput && userInput.trim() === userId.trim()) {
+        fetch(`/cancel/${bookingId}/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ "user_id": userInput.trim() })  // Ensure trimmed input is sent
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        })
+        .catch(error => console.error("Error:", error));
+    } else {
+        alert("Incorrect email. Cancellation denied.");
+    }
+}
+
         
     </script>
 

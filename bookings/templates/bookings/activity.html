@@ -1,116 +1,214 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static custom_filters %}
 {% block title %}{{ title }} Timetable{% endblock %}
 
 {% block content %}
-    <h1>{{ title }} Timetable</h1>
-    
-    <label for="selected-date">Select Date:</label>
-    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
-
-    <div class="table-container">
-        <table class="timetable">
-            <thead>
-                <tr>
-                    <th>Time Slot</th>
-                    <th>Status</th>
-                    <th>Booked By</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for slot in timetable %}
-                <tr>
-                    <td>{{ slot.time_slot }}</td>
-                    <td class="status-{{ slot.status|lower }}">{{ slot.status }}</td>
-                    <td>{{ slot.name }}</td>
-                    <td>
-                        {% if slot.status == "Available" %}
-                            <button 
-                                onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">
-                                Book
-                            </button>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div id="booking-overlay" class="overlay">
-        <div class="overlay-content">
-            <span class="close" onclick="closeBookingForm()">&times;</span>
-            <h2>Book Time Slot</h2>
-            <form id="booking-form">
-                <div class="form-group">
-                    <label for="selected-date-display">Selected Date:</label>
-                    <input type="text" id="selected-date-display" name="booking_date" readonly>
-                </div>
-
-                <div class="form-group">
-                    <label for="selected-time">Selected Time:</label>
-                    <input type="text" id="selected-time" name="start_time" readonly>
-                </div>
-
-                <div class="form-group">
-                    <label for="user_id">Email:</label>
-                    <input type="text" id="user_id" name="user_id" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="name">Name:</label>
-                    <input type="text" id="name" name="name" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="booking_type">Activity:</label>
-                    <input type="text" id="booking_type" name="booking_type" readonly>
-                </div>
-
-                <button type="submit">Book Slot</button>
-            </form>
+  <h1>{{ title }} Timetable</h1>
+  
+  <label for="selected-date">Select Date:</label>
+  <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
+  
+  <div class="table-container">
+    <table class="timetable">
+      <thead>
+          <tr>
+              <th>Time Slot</th>
+              <th>Status</th>
+              <th>Booked By</th>
+              <th>Action</th>
+          </tr>
+      </thead>
+      <tbody>
+          {% for slot in timetable %}
+          <tr class="selectable" data-time="{{ slot.time_slot|split:' - '|first }}">
+              <td>{{ slot.time_slot }}</td>
+              <td class="status-{{ slot.status|lower }}">{{ slot.status }}</td>
+              <td>{{ slot.name|default:"-" }}</td>
+              <td>
+                  {% if slot.status == "Booked" %}
+                      <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
+                  {% else %}
+                      -
+                  {% endif %}
+              </td>
+          </tr>
+          {% endfor %}
+      </tbody>
+  </table>
+  
+  </div>
+  
+  <!-- Single button to book the selected time range -->
+  <button id="book-selected-range" onclick="bookSelectedRange()">Book Selected Range</button>
+  
+  <div id="booking-overlay" class="overlay" style="display: none;">
+    <div class="overlay-content">
+      <span class="close" onclick="closeBookingForm()">&times;</span>
+      <h2>Book Time Slot</h2>
+      <form id="booking-form">
+        <div class="form-group">
+          <label for="selected-date-display">Selected Date:</label>
+          <input type="text" id="selected-date-display" name="booking_date" readonly>
         </div>
+  
+        <div class="form-group">
+          <label for="selected-time">Selected Time:</label>
+          <input type="text" id="selected-time" name="start_time" readonly>
+        </div>
+  
+        <div class="form-group">
+          <label for="user_id">Email:</label>
+          <input type="text" id="user_id" name="user_id" required>
+        </div>
+  
+        <div class="form-group">
+          <label for="name">Name:</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+  
+        <div class="form-group">
+          <label for="booking_type">Activity:</label>
+          <input type="text" id="booking_type" name="booking_type" readonly>
+        </div>
+  
+        <button type="submit">Book Slot</button>
+      </form>
     </div>
+  </div>
+  
+  <script>
+    function changeDate() {
+      let selectedDate = document.getElementById("selected-date").value;
+      console.log("📆 Selected Date from Calendar:", selectedDate);
+      window.location.href = "?date=" + selectedDate;
+    }
+  
+    // (Optional) This function remains in case you want to open the overlay by passing a time range.
+    function openBookingForm(timeSlot, dateSlot, activity) {
+      document.getElementById("selected-time").value = timeSlot;
+      document.getElementById("selected-date-display").value = dateSlot;
+      document.getElementById("booking_type").value = activity;
+      document.getElementById("booking-overlay").style.display = "flex";
+    }
+  
+    function closeBookingForm() {
+      document.getElementById("booking-overlay").style.display = "none";
+      document.getElementById("booking-form").reset();
+    }
+  
+    document.getElementById("booking-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      const formData = new FormData(this);
+  
+      fetch("{% url 'api_book' %}", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": "{{ csrf_token }}",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(Object.fromEntries(formData))
+      })
+      .then(response => response.json())
+      .then(data => {
+        alert(data.message);
+        closeBookingForm();
+        location.reload();
+      })
+      .catch(error => console.error("Error:", error));
+    });
+    
+    function cancelBooking(bookingId, userId) {
+    const userInput = prompt("Enter your email to confirm cancellation:");
+    if (userInput && userInput.trim() === userId.trim()) {
+        fetch(`/cancel/${bookingId}/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ "user_id": userInput.trim() })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        })
+        .catch(error => console.error("Error:", error));
+    } else {
+        alert("Incorrect email. Cancellation denied.");
+    }
+}
+  </script>
 
-    <script>
-        function changeDate() {
-            let selectedDate = document.getElementById("selected-date").value;
-            console.log("📆 Selected Date from Calendar:", selectedDate);
-            window.location.href = "?date=" + selectedDate;
-        }
+<script>
 
-        function openBookingForm(timeSlot, dateSlot, activity) {
-            document.getElementById("selected-time").value = timeSlot;
-            document.getElementById("selected-date-display").value = dateSlot;
-            document.getElementById("booking_type").value = activity;
-            document.getElementById("booking-overlay").style.display = "flex";
-        }
 
-        function closeBookingForm() {
-            document.getElementById("booking-overlay").style.display = "none";
-            document.getElementById("booking-form").reset();
-        }
 
-        document.getElementById("booking-form").addEventListener("submit", function (event) {
-            event.preventDefault();
-            const formData = new FormData(this);
+document.addEventListener('DOMContentLoaded', function() {
+    let isDragging = false;
+    let selectedSlots = [];
 
-            fetch("{% url 'api_book' %}", {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": "{{ csrf_token }}",
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(Object.fromEntries(formData))
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                closeBookingForm();
-                location.reload();
-            })
-            .catch(error => console.error("Error:", error));
+    function clearSelection() {
+        document.querySelectorAll('.selectable').forEach(cell => {
+            cell.classList.remove('selected-slot');
         });
-    </script>
+        selectedSlots = [];
+    }
+
+    document.querySelectorAll('.selectable').forEach(cell => {
+        cell.addEventListener('mousedown', (e) => {
+            clearSelection();
+            isDragging = true;
+            cell.classList.add('selected-slot');
+            selectedSlots.push(cell);
+        });
+
+        cell.addEventListener('mouseover', (e) => {
+            if (isDragging) {
+                if (!cell.classList.contains('selected-slot') && selectedSlots.length < 8) {
+                    cell.classList.add('selected-slot');
+                    selectedSlots.push(cell);
+                }
+            }
+        });
+
+        cell.addEventListener('mouseup', () => {
+            if (isDragging) isDragging = false;
+        });
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) isDragging = false;
+    });
+
+    function add15Minutes(timeStr) {
+        let [hours, minutes] = timeStr.split(":").map(Number);
+        minutes += 15;
+        if (minutes >= 60) {
+            minutes -= 60;
+            hours += 1;
+        }
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+
+    function updateBookingForm() {
+        if (!selectedSlots.length) return;
+        const startSlot = selectedSlots[0].dataset.time;
+        const endSlot = add15Minutes(selectedSlots[selectedSlots.length - 1].dataset.time);
+
+        document.getElementById("selected-time").value = `${startSlot} - ${endSlot}`;
+        document.getElementById("selected-date-display").value = document.getElementById("selected-date").value;
+        document.getElementById("booking_type").value = "{{ activity }}";
+        document.getElementById("booking-overlay").style.display = "flex";
+    }
+
+    window.bookSelectedRange = function() {
+        if (selectedSlots.length === 0) {
+            alert("No slots selected. Please click and drag over the desired time range.");
+            return;
+        }
+        updateBookingForm();
+    };
+});
+</script>
 {% endblock %}

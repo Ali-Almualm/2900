@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block content %}
-  <h2>Book Time Slot</h2>
-  <form method="POST">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Book Slot</button>
-  </form>
-{% endblock %}
