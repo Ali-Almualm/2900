@@ -1,23 +1,20 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout, login, authenticate
 import json
 from datetime import datetime, timedelta
-from .models import Booking
+from .models import Booking, UserProfile
 from .forms import BookingForm, registrationform, loginform
 from django.contrib.auth.decorators import login_required
 
-
-
+@login_required
 @csrf_exempt
 def api_book(request):
     if request.method == "POST":
         data = json.loads(request.body)
         
         time_range = data.get("start_time")  # e.g., "09:00 - 10:30"
-        user_id = data.get("user_id")
-        name = data.get("name")
         booking_type = data.get("booking_type")
         selected_date_str = data.get("booking_date")
 
@@ -50,8 +47,8 @@ def api_book(request):
 
             # Create booking
             Booking.objects.create(
-                user_id=user_id,
-                name=name,
+                user_id=request.user.id,
+                name=request.user.username,
                 start_time=start_datetime,
                 end_time=end_datetime,
                 booking_type=booking_type
@@ -60,6 +57,19 @@ def api_book(request):
         except Exception as e:
             return JsonResponse({"message": f"Error: {str(e)}"}, status=400)
 
+    return JsonResponse({"message": "Invalid request method."}, status=400)
+
+@login_required
+@csrf_exempt
+def cancel_booking(request, booking_id):
+    if request.method == "POST":
+        booking = get_object_or_404(Booking, id=booking_id)
+        if booking.name == request.user.username:
+            booking.delete()
+            return JsonResponse({"message": "Booking cancelled successfully."})
+        else:
+            return JsonResponse({"message": "You are not authorized to cancel this booking." + request.user.username}, status=403)
+    return JsonResponse({"message": "Invalid request method."}, status=400)
 
 def index(request):
     # Get selected date from query parameters (default to today)
@@ -132,27 +142,6 @@ def book(request):
         'form': form,
         'activity': activity_type
     })
-
-
-def cancel_booking(request, booking_id):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            user_id_input = data.get("user_id", "").strip()
-
-            booking = Booking.objects.filter(id=booking_id).first()
-            if not booking:
-                return JsonResponse({"message": "Booking not found"}, status=404)
-
-            stored_user_id = booking.user_id.strip()
-            if user_id_input != stored_user_id:
-                return JsonResponse({"message": "Unauthorized: Incorrect user ID"}, status=403)
-
-            booking.delete()
-            return JsonResponse({"message": "Booking canceled successfully"})
-        except Exception as e:
-            return JsonResponse({"message": f"Error: {str(e)}"}, status=400)
-
 
 def activity_view(request, activity_type):
     from datetime import datetime, timedelta
@@ -247,6 +236,7 @@ def login_user_view(request):
     return render(request, 'bookings/login.html', {
         'form': form
     })
+
 @login_required
 def logout_view(request):
     logout(request)

@@ -25,8 +25,8 @@
               <td class="status-{{ slot.status|lower }}">{{ slot.status }}</td>
               <td>{{ slot.name|default:"-" }}</td>
               <td>
-                  {% if slot.status == "Booked" %}
-                      <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
+                  {% if slot.status == "Booked" and slot.name == user.username %}
+                      <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel</button>
                   {% else %}
                       -
                   {% endif %}
@@ -34,10 +34,10 @@
           </tr>
           {% endfor %}
       </tbody>
-  </table>
-  
+    </table>
   </div>
-  
+
+  {% if user.is_authenticated %}
   <!-- Single button to book the selected time range -->
   <button id="book-selected-range" onclick="bookSelectedRange()">Book Selected Range</button>
   
@@ -46,6 +46,7 @@
       <span class="close" onclick="closeBookingForm()">&times;</span>
       <h2>Book Time Slot</h2>
       <form id="booking-form">
+        {% csrf_token %}
         <div class="form-group">
           <label for="selected-date-display">Selected Date:</label>
           <input type="text" id="selected-date-display" name="booking_date" readonly>
@@ -57,13 +58,8 @@
         </div>
   
         <div class="form-group">
-          <label for="user_id">Email:</label>
-          <input type="text" id="user_id" name="user_id" required>
-        </div>
-  
-        <div class="form-group">
-          <label for="name">Name:</label>
-          <input type="text" id="name" name="name" required>
+          <label for="username">Username:</label>
+          <input type="text" id="username" name="username" value="{{ user.username }}" readonly>
         </div>
   
         <div class="form-group">
@@ -75,6 +71,9 @@
       </form>
     </div>
   </div>
+  {% else %}
+  <p>Please <a href="{% url 'login' %}">log in</a> to book a time slot.</p>
+  {% endif %}
   
   <script>
     function changeDate() {
@@ -117,33 +116,24 @@
       .catch(error => console.error("Error:", error));
     });
     
-    function cancelBooking(bookingId, userId) {
-    const userInput = prompt("Enter your email to confirm cancellation:");
-    if (userInput && userInput.trim() === userId.trim()) {
-        fetch(`/cancel/${bookingId}/`, {
-            method: "POST",
-            headers: {
-                "X-CSRFToken": "{{ csrf_token }}",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ "user_id": userInput.trim() })
-        })
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            location.reload();
-        })
-        .catch(error => console.error("Error:", error));
-    } else {
-        alert("Incorrect email. Cancellation denied.");
+    function cancelBooking(bookingId) {
+      fetch(`/cancel/${bookingId}/`, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": "{{ csrf_token }}",
+          "Content-Type": "application/json"
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        alert(data.message);
+        location.reload();
+      })
+      .catch(error => console.error("Error:", error));
     }
-}
   </script>
 
 <script>
-
-
-
 document.addEventListener('DOMContentLoaded', function() {
     let isDragging = false;
     let selectedSlots = [];
