@@ -9,4 +9,7 @@ urlpatterns = [
     path('book/', views.book, name='book'),
     path('api/book/', views.api_book, name='api_book'),
     path('cancel/<int:booking_id>/', views.cancel_booking, name='cancel_booking'),
+    path('register/', views.register_user_view, name='register'),
+    path('login/', views.login_user_view, name='login'),
+    path('logout/', views.logout_view, name='logout'),
 ]

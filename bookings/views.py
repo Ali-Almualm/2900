@@ -1,10 +1,13 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import logout, login, authenticate
 import json
 from datetime import datetime, timedelta
 from .models import Booking
-from .forms import BookingForm
+from .forms import BookingForm, registrationform, loginform
+from django.contrib.auth.decorators import login_required
+
 
 
 @csrf_exempt
@@ -111,7 +114,7 @@ def index(request):
         "selected_date": selected_date
     })
 
-
+@login_required
 def book(request):
     activity_type = request.GET.get('activity', 'pool')
     
@@ -216,3 +219,35 @@ def activity_view(request, activity_type):
         "selected_date": selected_date,
         "title": dict(Booking.BOOKING_TYPES).get(activity_type)
     })
+
+def register_user_view(request):
+    if request.method == "POST":
+        form = registrationform(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('index')
+    else:
+        form = registrationform()
+    return render(request, 'bookings/register.html', {
+        'form': form
+    })
+
+def login_user_view(request):
+    if request.method == "POST":
+        form = loginform(data=request.POST)
+        if form.is_valid():
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password')
+            user = authenticate(request, username=username, password=password)
+            if user is not None:
+                login(request, user)
+                return redirect('index')
+    else:
+        form = loginform()
+    return render(request, 'bookings/login.html', {
+        'form': form
+    })
+@login_required
+def logout_view(request):
+    logout(request)
+    return redirect('login')
