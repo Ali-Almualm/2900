@@ -45,7 +45,7 @@
                                 {{ slot.status }}
                             </td>
                             <td>
-                                {% if slot.status == "Booked" %}
+                                {% if slot.status == "Booked" and slot.name == user.username  %}
                                     <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
                                 {% endif %}
                             </td>
