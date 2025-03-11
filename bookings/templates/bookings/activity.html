@@ -27,6 +27,12 @@
               <td>
                   {% if slot.status == "Booked" and slot.name == user.username %}
                       <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel</button>
+                  {% elif slot.status == "Available" %}
+                      {% if user.is_authenticated %}
+                          <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                      {% else %}
+                          <p>Please <a href="{% url 'login' %}">log in</a> to book a time slot.</p>
+                      {% endif %}
                   {% else %}
                       -
                   {% endif %}
