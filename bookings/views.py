@@ -3,9 +3,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout, login, authenticate
 import json
+from django.http import JsonResponse
 from datetime import datetime, timedelta
-from .models import Booking, UserProfile
-from .forms import BookingForm, registrationform, loginform
+from .models import Booking, UserProfile, Availability
+from .forms import BookingForm, registrationform, loginform, AvailabilityForm
 from django.contrib.auth.decorators import login_required
 
 @login_required
@@ -125,6 +126,39 @@ def index(request):
     })
 
 @login_required
+
+def availability_view(request, activity_type):
+    # Example data, you can query actual availability based on the activity_type
+    availabilities = Availability.objects.filter(booking_type=activity_type)
+    
+    return render(request, 'bookings/availability.html', {
+        'activity_type': activity_type,
+        'availabilities': availabilities,
+        'form': AvailabilityForm(),  # Assuming you have a form to save availability
+    })
+
+
+@login_required
+@csrf_exempt
+def update_availability(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        selected_times = data.get('times', [])
+
+        # Update availability for each selected time slot
+        for time in selected_times:
+            try:
+                availability = Availability.objects.get(start_time=time)
+                availability.is_available = True
+                availability.save()
+            except Availability.DoesNotExist:
+                continue
+
+        return JsonResponse({"message": "Availability updated successfully!"})
+    return JsonResponse({"message": "Invalid request."}, status=400)
+
+
+@login_required
 def book(request):
     activity_type = request.GET.get('activity', 'pool')
     
@@ -208,6 +242,25 @@ def activity_view(request, activity_type):
         "selected_date": selected_date,
         "title": dict(Booking.BOOKING_TYPES).get(activity_type)
     })
+
+@login_required
+def save_availability(request, activity_type):
+    if request.method == 'POST':
+        form = AvailabilityForm(request.POST)
+        if form.is_valid():
+            availability = form.save(commit=False)
+            availability.user = request.user
+            availability.booking_type = activity_type  # Prepopulate with the activity type
+            availability.save()
+            return redirect('availability', activity_type=activity_type)  # Redirect to availability page for the activity
+    else:
+        form = AvailabilityForm()
+
+    return render(request, 'bookings/availability.html', {
+        'form': form,
+        'activity_type': activity_type
+    })
+
 
 def register_user_view(request):
     if request.method == "POST":

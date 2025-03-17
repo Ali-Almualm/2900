@@ -11,5 +11,8 @@ urlpatterns = [
     path('cancel/<int:booking_id>/', views.cancel_booking, name='cancel_booking'),
     path('register/', views.register_user_view, name='register'),
     path('login/', views.login_user_view, name='login'),
+    path('availability/<str:activity_type>/', views.availability_view, name='availability'),
+    path('update-availability/', views.update_availability, name='update_availability'),
+    path('save-availability/<str:activity_type>/', views.save_availability, name='save_availability'),
     path('logout/', views.logout_view, name='logout'),
 ]

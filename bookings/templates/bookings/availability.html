@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ activity_type|title }} Availability</h1>
+
+<form method="POST" action="{% url 'save_availability' activity_type=activity_type %}">
+    {% csrf_token %}
+    <div class="form-group">
+        <label for="booking_type">Booking Type:</label>
+        <select name="booking_type" id="booking_type">
+            <option value="pool" {% if activity_type == 'pool' %}selected{% endif %}>Pool</option>
+            <option value="switch" {% if activity_type == 'switch' %}selected{% endif %}>Nintendo Switch</option>
+            <option value="table_tennis" {% if activity_type == 'table_tennis' %}selected{% endif %}>Table Tennis</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="start_time">Start Time:</label>
+        <input type="datetime-local" name="start_time" id="start_time" required>
+    </div>
+    <div class="form-group">
+        <label for="end_time">End Time:</label>
+        <input type="datetime-local" name="end_time" id="end_time" required>
+    </div>
+    <div class="form-group">
+        <label for="is_available">Is Available:</label>
+        <input type="checkbox" name="is_available" id="is_available" checked>
+    </div>
+    <button type="submit">Save Availability</button>
+</form>
+
+<h2>Your Current Availability</h2>
+<table class="timetable">
+    <thead>
+        <tr>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for availability in availabilities %}
+        <tr class="selectable" data-time="{{ availability.start_time }}">
+            <td>{{ availability.start_time }}</td>
+            <td>{{ availability.end_time }}</td>
+            <td>{{ availability.is_available|yesno:"Available,Not Available" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="3">No availability set for this activity.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Drag to Select Available Time</h3>
+<p>Click and drag to select your available time slots.</p>
+
+<button id="update-availability" onclick="updateAvailability()">Set Selected Time as Available</button>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let isDragging = false;
+    let selectedSlots = [];
+
+    // Function to clear all selected slots
+    function clearSelection() {
+        document.querySelectorAll('.selectable').forEach(cell => {
+            cell.classList.remove('selected-slot');
+        });
+        selectedSlots = [];
+    }
+
+    // Mouse down event to start dragging
+    document.querySelectorAll('.selectable').forEach(cell => {
+        cell.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            clearSelection();
+            cell.classList.add('selected-slot');
+            selectedSlots.push(cell);
+        });
+
+        // Mouse over event to add time slots to the selection if dragging
+        cell.addEventListener('mouseover', (e) => {
+            if (isDragging && !cell.classList.contains('selected-slot')) {
+                cell.classList.add('selected-slot');
+                selectedSlots.push(cell);
+            }
+        });
+
+        // Mouse up event to stop dragging
+        cell.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                console.log("Selected time slots: ", selectedSlots); // Log or process selected slots
+            }
+        });
+    });
+
+    // Stop dragging when mouse button is released outside of the table
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+        }
+    });
+
+    // Function to update availability for selected slots
+    window.updateAvailability = function() {
+        if (selectedSlots.length === 0) {
+            alert("No time slots selected.");
+            return;
+        }
+
+        const selectedTimes = selectedSlots.map(slot => slot.dataset.time);
+        console.log("Updating availability for slots:", selectedTimes);
+
+        // You can send the selected times to your server using fetch or another method
+        fetch("/update-availability/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({ times: selectedTimes })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+        })
+        .catch(error => console.error("Error:", error));
+    };
+});
+</script>
+
+{% endblock %}

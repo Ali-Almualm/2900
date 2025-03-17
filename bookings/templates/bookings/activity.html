@@ -4,6 +4,9 @@
 
 {% block content %}
   <h1>{{ title }} Timetable</h1>
+  <a href="{% url 'availability' activity_type='table_tennis' %}">
+    <button>Select Availability</button>
+  </a>
   
   <label for="selected-date">Select Date:</label>
   <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">

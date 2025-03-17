@@ -10,15 +10,16 @@ body {
 h1, h2, h3 {
     margin-bottom: 10px;
 }
+
+/* Selectable slots and selected highlight */
 .selectable {
     cursor: pointer;
     user-select: none;
-  }
-  
-.selected-slot {
-    background-color: #ffe0b3; /* or any highlight color */
-  }
+}
 
+.selected-slot {
+    background-color: #ffe0b3; /* Highlight color when selected */
+}
 
 /* Navigation links */
 .navigation {
@@ -44,11 +45,9 @@ h1, h2, h3 {
     margin: 0 auto;
     width: 90%; /* Adjust width as needed */
     max-width: 900px; /* Restrict max width for large screens */
- 
-
 }
 
-/* The timetable table */
+/* Timetable table */
 .timetable {
     border-collapse: collapse;
     width: 100%;
@@ -70,9 +69,16 @@ h1, h2, h3 {
     color: red;
     font-weight: bold;
 }
+
 .timetable td.status-available {
     color: green;
     font-weight: bold;
+}
+
+.timetable td input[type="checkbox"] {
+    margin: 0;
+    width: 20px;
+    height: 20px;
 }
 
 /* Overlay (centered popup) */
@@ -121,6 +127,21 @@ h1, h2, h3 {
 .form-group label {
     width: 120px; 
     font-weight: bold;
+}
+/* Selected slot style */
+.selected-slot {
+    background-color: #cce5ff; /* Light blue to indicate selection */
+}
+
+/* Hover effect for time slot dragging */
+.selectable:hover {
+    background-color: #e9f7ff; /* Lighter shade when hovering */
+}
+
+/* Optional: you can add a "dragging" indicator */
+.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
 }
 
 .form-group input,
