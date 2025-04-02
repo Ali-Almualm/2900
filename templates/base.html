@@ -17,7 +17,7 @@
             <a href="{% url 'table_tennis' %}">Table Tennis</a> |
             
             {% if user.is_authenticated %}
-                <a href="{% url 'select_availability_activity' %}">Set Availability</a> |
+                <a href="{% url 'select_match_availability_activity' %}">Set Match Availability</a> |
                 <a href="{% url 'find_matches' activity_type='pool' %}">Find Matches</a> |
                 <a href="{% url 'logout' %}">Logout</a>
             {% else %}

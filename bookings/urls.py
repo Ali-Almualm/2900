@@ -12,15 +12,21 @@ urlpatterns = [
     path('register/', views.register_user_view, name='register'),
     path('login/', views.login_user_view, name='login'),
 
-    # --- Make sure this one comes first ---
-    path('availability/select/', views.select_availability_activity_view, name='select_availability_activity'),
-    # --- Before this one ---
-    path('availability/<str:activity_type>/', views.availability_view, name='availability'),
+    # Renamed URL name and view function
+    path('match-availability/select/', views.select_match_availability_activity_view, name='select_match_availability_activity'),
+    # Renamed path, view function, and URL name
+    path('match-availability/<str:activity_type>/', views.match_availability_view, name='match_availability'),
+    # Renamed path, view function, and URL name
+    path('update-match-availability/', views.update_match_availability, name='update_match_availability'),
+    # Renamed path, view function, and URL name
+    path('save-match-availability/<str:activity_type>/', views.save_match_availability, name='save_match_availability'),
+    # Renamed path, parameter, view function, and URL name
+    path('toggle-match-availability/<int:match_availability_id>/', views.toggle_match_availability, name='toggle_match_availability'),
+    # Renamed path, parameter, view function, and URL name
+    path('delete-match-availability/<int:match_availability_id>/', views.delete_match_availability, name='delete_match_availability'),
+    # --- End Renamed URLs ---
 
-    path('update-availability/', views.update_availability, name='update_availability'),
-    path('save-availability/<str:activity_type>/', views.save_availability, name='save_availability'),
     path('logout/', views.logout_view, name='logout'),
-    path('toggle-availability/<int:availability_id>/', views.toggle_availability, name='toggle_availability'),
-    path('delete-availability/<int:availability_id>/', views.delete_availability, name='delete_availability'),
+    # find_matches URL remains, as it finds matches based on the (now renamed) MatchAvailability
     path('matches/<str:activity_type>/', views.find_matches, name='find_matches'),
 ]

@@ -1,6 +1,6 @@
 # bookings/forms.py
 from django import forms
-from .models import Booking, Availability
+from .models import Booking, MatchAvailability
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 
@@ -22,9 +22,10 @@ class loginform(AuthenticationForm):
         model = User
         fields = ['username', 'password']
 
-class AvailabilityForm(forms.ModelForm):
+class MatchAvailabilityForm(forms.ModelForm):
     class Meta:
-        model = Availability
+        # Use renamed model
+        model = MatchAvailability
         fields = ['booking_type', 'start_time', 'end_time', 'is_available']
         widgets = {
             'start_time': forms.DateTimeInput(attrs={'type': 'datetime-local'}),

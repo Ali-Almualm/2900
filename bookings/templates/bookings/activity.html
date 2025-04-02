@@ -4,8 +4,8 @@
 
 {% block content %}
   <h1>{{ title }} Timetable</h1>
-  <a href="{% url 'availability' activity_type=activity %}">
-    <button>Select Availability</button>
+  <a href="{% url 'match_availability' activity_type=activity %}">
+    <button>Select Match Availability</button>
   </a>
   
   <label for="selected-date">Select Date:</label>

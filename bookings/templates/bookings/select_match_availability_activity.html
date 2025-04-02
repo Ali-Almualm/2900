@@ -9,7 +9,7 @@
 
     <div class="activity-selection-buttons">
         {% for activity in activity_types %}
-            <a href="{% url 'availability' activity_type=activity.code %}" class="button-link">
+            <a href="{% url 'match_availability' activity_type=activity.code %}" class="button-link">
                 <button>{{ activity.name }}</button>
             </a>
         {% endfor %}
