@@ -1,0 +1,34 @@
+{# bookings/templates/bookings/select_availability_activity.html #}
+{% extends "base.html" %}
+
+{% block title %}Select Activity for Availability{% endblock %}
+
+{% block content %}
+    <h2>Set Availability</h2>
+    <p>Please choose the activity you want to set your availability for:</p>
+
+    <div class="activity-selection-buttons">
+        {% for activity in activity_types %}
+            <a href="{% url 'availability' activity_type=activity.code %}" class="button-link">
+                <button>{{ activity.name }}</button>
+            </a>
+        {% endfor %}
+    </div>
+
+    <style>
+        .activity-selection-buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px; /* Adds space between buttons */
+        }
+        .button-link button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        /* Optional: Style links to look more like buttons if needed */
+        .button-link {
+            text-decoration: none;
+        }
+    </style>
+{% endblock %}

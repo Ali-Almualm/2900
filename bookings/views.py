@@ -4,7 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout, login, authenticate
 import json
 from django.http import JsonResponse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from .models import Booking, UserProfile, Availability
 from .forms import BookingForm, registrationform, loginform, AvailabilityForm
 from django.contrib.auth.decorators import login_required
@@ -126,15 +126,40 @@ def index(request):
     })
 
 @login_required
+def select_availability_activity_view(request):
+    """
+    Displays a page for the user to select which activity
+    they want to set availability for.
+    """
+    activity_types = [
+        {'code': 'pool', 'name': 'Pool'},
+        {'code': 'switch', 'name': 'Nintendo Switch'},
+        {'code': 'table_tennis', 'name': 'Table Tennis'},
+    ]
+    return render(request, 'bookings/select_availability_activity.html', {'activity_types': activity_types})
 
+
+
+
+@login_required
 def availability_view(request, activity_type):
-    # Example data, you can query actual availability based on the activity_type
-    availabilities = Availability.objects.filter(booking_type=activity_type)
-    
+    # Get selected date or default to today
+    date_str = request.GET.get('date', date.today().strftime('%Y-%m-%d'))
+    selected_date = date.fromisoformat(date_str) # More robust date parsing
+
+    # Filter availabilities by the selected date and user
+    availabilities = Availability.objects.filter(
+        user=request.user,
+        booking_type=activity_type,
+        start_time__date=selected_date
+    ).order_by('start_time')
+
     return render(request, 'bookings/availability.html', {
         'activity_type': activity_type,
         'availabilities': availabilities,
-        'form': AvailabilityForm(),  # Assuming you have a form to save availability
+        'form': AvailabilityForm(initial={'booking_type': activity_type}),
+        'today': date.today(), # Add today's date to the context
+        'selected_date': selected_date # Pass the selected date as well
     })
 
 
@@ -144,19 +169,174 @@ def update_availability(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         selected_times = data.get('times', [])
-
-        # Update availability for each selected time slot
-        for time in selected_times:
+        activity_type = data.get('activity_type')
+        selected_date = data.get('selected_date')
+        
+        if not activity_type or not selected_date:
+            return JsonResponse({"message": "Missing activity type or date"}, status=400)
+            
+        selected_date = datetime.strptime(selected_date, '%Y-%m-%d').date()
+        
+        # Convert time strings to datetime objects
+        availability_objects = []
+        for time_str in selected_times:
             try:
-                availability = Availability.objects.get(start_time=time)
-                availability.is_available = True
-                availability.save()
-            except Availability.DoesNotExist:
+                # Assuming time_str is like "09:00"
+                hours, minutes = map(int, time_str.split(':'))
+                start_time = datetime.combine(selected_date, datetime.min.time()).replace(
+                    hour=hours, minute=minutes
+                )
+                end_time = start_time + timedelta(minutes=15)
+                
+                # Create or update availability
+                availability, created = Availability.objects.get_or_create(
+                    user=request.user,
+                    booking_type=activity_type,
+                    start_time=start_time,
+                    end_time=end_time,
+                    defaults={'is_available': True}
+                )
+                
+                if not created:
+                    availability.is_available = True
+                    availability.save()
+                    
+                availability_objects.append(availability)
+            except Exception as e:
+                return JsonResponse({"message": f"Error processing time: {str(e)}"}, status=400)
+                
+        return JsonResponse({
+            "message": f"Successfully updated {len(availability_objects)} availability slots",
+            "count": len(availability_objects)
+        })
+        
+    return JsonResponse({"message": "Invalid request method"}, status=400)
+
+# Add these functions to your views.py file
+
+@login_required
+@csrf_exempt
+def toggle_availability(request, availability_id):
+    """Toggle the availability status (available/unavailable)"""
+    if request.method == 'POST':
+        try:
+            availability = get_object_or_404(Availability, id=availability_id, user=request.user)
+            data = json.loads(request.body)
+            availability.is_available = data.get('is_available', not availability.is_available)
+            availability.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)})
+    return JsonResponse({'success': False, 'message': 'Invalid request method'})
+
+@login_required
+@csrf_exempt
+def delete_availability(request, availability_id):
+    """Delete an availability entry"""
+    if request.method == 'POST':
+        try:
+            availability = get_object_or_404(Availability, id=availability_id, user=request.user)
+            availability.delete()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)})
+    return JsonResponse({'success': False, 'message': 'Invalid request method'})
+
+@login_required
+def find_matches(request, activity_type):
+    """Find users who have matching availability for the given activity"""
+    user_profile = request.user.userprofile
+    
+    # Get the user's skill level for this activity
+    if activity_type == 'pool':
+        user_skill = user_profile.ranking_pool
+    elif activity_type == 'switch':
+        user_skill = user_profile.ranking_switch
+    elif activity_type == 'table_tennis':
+        user_skill = user_profile.ranking_table_tennis
+    else:
+        user_skill = 0
+    
+    # Get the user's availability for this activity
+    user_availability = Availability.objects.filter(
+        user=request.user,
+        booking_type=activity_type,
+        is_available=True
+    )
+    
+    if not user_availability.exists():
+        return render(request, 'bookings/matches.html', {
+            'activity_type': activity_type,
+            'matches': [],
+            'error': 'You need to set your availability before finding matches'
+        })
+    
+    # Find all other users with availability for this activity
+    matches = []
+    other_users = User.objects.exclude(id=request.user.id)
+    
+    for other_user in other_users:
+        # Get their availability
+        other_availability = Availability.objects.filter(
+            user=other_user,
+            booking_type=activity_type,
+            is_available=True
+        )
+        
+        if not other_availability.exists():
+            continue
+        
+        # Check for overlapping availability
+        overlapping_times = []
+        
+        for user_slot in user_availability:
+            for other_slot in other_availability:
+                # Check if times overlap
+                if (user_slot.start_time < other_slot.end_time and 
+                    user_slot.end_time > other_slot.start_time):
+                    
+                    # Calculate the overlap period
+                    overlap_start = max(user_slot.start_time, other_slot.start_time)
+                    overlap_end = min(user_slot.end_time, other_slot.end_time)
+                    
+                    overlapping_times.append({
+                        'start': overlap_start,
+                        'end': overlap_end,
+                        'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
+                    })
+        
+        if overlapping_times:
+            # Get other user's skill level
+            try:
+                other_profile = other_user.userprofile
+                if activity_type == 'pool':
+                    other_skill = other_profile.ranking_pool
+                elif activity_type == 'switch':
+                    other_skill = other_profile.ranking_switch
+                elif activity_type == 'table_tennis':
+                    other_skill = other_profile.ranking_table_tennis
+                else:
+                    other_skill = 0
+                
+                # Calculate skill difference
+                skill_difference = abs(user_skill - other_skill)
+                
+                matches.append({
+                    'user': other_user,
+                    'overlapping_times': overlapping_times,
+                    'skill_level': other_skill,
+                    'skill_difference': skill_difference
+                })
+            except UserProfile.DoesNotExist:
                 continue
-
-        return JsonResponse({"message": "Availability updated successfully!"})
-    return JsonResponse({"message": "Invalid request."}, status=400)
-
+    
+    # Sort matches by skill difference (closer matches first)
+    matches.sort(key=lambda x: x['skill_difference'])
+    
+    return render(request, 'bookings/matches.html', {
+        'activity_type': activity_type,
+        'matches': matches
+    })
 
 @login_required
 def book(request):
@@ -177,8 +357,8 @@ def book(request):
         'activity': activity_type
     })
 
+
 def activity_view(request, activity_type):
-    from datetime import datetime, timedelta
     # Get selected date (default to today)
     date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
     selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -243,6 +423,7 @@ def activity_view(request, activity_type):
         "title": dict(Booking.BOOKING_TYPES).get(activity_type)
     })
 
+
 @login_required
 def save_availability(request, activity_type):
     if request.method == 'POST':
@@ -250,15 +431,39 @@ def save_availability(request, activity_type):
         if form.is_valid():
             availability = form.save(commit=False)
             availability.user = request.user
-            availability.booking_type = activity_type  # Prepopulate with the activity type
+            availability.booking_type = activity_type
+            
+            # Check for overlapping availabilities
+            overlapping = Availability.objects.filter(
+                user=request.user,
+                booking_type=activity_type,
+                start_time__lt=availability.end_time,
+                end_time__gt=availability.start_time
+            )
+            
+            if overlapping.exists():
+                # Handle overlapping (merge or reject)
+                # For simplicity, you might want to return an error message
+                return render(request, 'bookings/availability.html', {
+                    'form': form,
+                    'activity_type': activity_type,
+                    'error': 'Time range overlaps with existing availability'
+                })
+                
             availability.save()
-            return redirect('availability', activity_type=activity_type)  # Redirect to availability page for the activity
+            return redirect('availability', activity_type=activity_type)
     else:
-        form = AvailabilityForm()
+        form = AvailabilityForm(initial={'booking_type': activity_type})
 
+    availabilities = Availability.objects.filter(
+        user=request.user,
+        booking_type=activity_type
+    ).order_by('start_time')
+    
     return render(request, 'bookings/availability.html', {
         'form': form,
-        'activity_type': activity_type
+        'activity_type': activity_type,
+        'availabilities': availabilities
     })
 
 

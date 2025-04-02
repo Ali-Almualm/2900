@@ -1,17 +1,23 @@
 {% extends "base.html" %}
+{% load static custom_filters %}
 
 {% block content %}
 <h1>{{ activity_type|title }} Availability</h1>
+
+{% if error %}
+<div class="error-message">{{ error }}</div>
+{% endif %}
 
 <form method="POST" action="{% url 'save_availability' activity_type=activity_type %}">
     {% csrf_token %}
     <div class="form-group">
         <label for="booking_type">Booking Type:</label>
-        <select name="booking_type" id="booking_type">
+        <select name="booking_type" id="booking_type" disabled>
             <option value="pool" {% if activity_type == 'pool' %}selected{% endif %}>Pool</option>
             <option value="switch" {% if activity_type == 'switch' %}selected{% endif %}>Nintendo Switch</option>
             <option value="table_tennis" {% if activity_type == 'table_tennis' %}selected{% endif %}>Table Tennis</option>
         </select>
+        <input type="hidden" name="booking_type" value="{{ activity_type }}">
     </div>
     <div class="form-group">
         <label for="start_time">Start Time:</label>
@@ -25,37 +31,72 @@
         <label for="is_available">Is Available:</label>
         <input type="checkbox" name="is_available" id="is_available" checked>
     </div>
-    <button type="submit">Save Availability</button>
+    <button type="submit">Add New Availability</button>
 </form>
 
 <h2>Your Current Availability</h2>
+<div class="date-selector">
+    <label for="availability-date">View availability for date:</label>
+    <input type="date" id="availability-date" value="{{ selected_date|default:today|date:'Y-m-d' }}">
+    <button onclick="filterByDate()">Filter</button>
+</div>
+
 <table class="timetable">
     <thead>
         <tr>
             <th>Start Time</th>
             <th>End Time</th>
             <th>Status</th>
+            <th>Action</th>
         </tr>
     </thead>
-    <tbody>
+    <tbody id="availability-slots">
         {% for availability in availabilities %}
-        <tr class="selectable" data-time="{{ availability.start_time }}">
+        <tr class="selectable" data-id="{{ availability.id }}">
             <td>{{ availability.start_time }}</td>
             <td>{{ availability.end_time }}</td>
             <td>{{ availability.is_available|yesno:"Available,Not Available" }}</td>
+            <td>
+                <button onclick="toggleAvailability({{ availability.id }}, {{ availability.is_available|yesno:'true,false' }})">
+                    {{ availability.is_available|yesno:"Mark Unavailable,Mark Available" }}
+                </button>
+                <button onclick="deleteAvailability({{ availability.id }})">Delete</button>
+            </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="3">No availability set for this activity.</td>
+            <td colspan="4">No availability set for this activity.</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
+<div class="calendar-view">
+    <h3>Calendar View</h3>
+    <div class="calendar-grid">
+        <!-- This will be populated with JavaScript -->
+    </div>
+</div>
+
 <h3>Drag to Select Available Time</h3>
 <p>Click and drag to select your available time slots.</p>
 
-<button id="update-availability" onclick="updateAvailability()">Set Selected Time as Available</button>
+<div class="time-selector">
+    <label for="selected-date">Date:</label>
+    <input type="date" id="selected-date" value="{{ today|date:'Y-m-d' }}">
+    
+    <div class="time-grid">
+        {% for hour in '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'|split:',' %}
+            {% for minute in '00,15,30,45'|split:',' %}
+            <div class="time-slot" data-time="{{ hour }}:{{ minute }}">
+                {{ hour }}:{{ minute }}
+            </div>
+            {% endfor %}
+        {% endfor %}
+    </div>
+    
+    <button id="update-availability" onclick="updateAvailability()">Set Selected Times as Available</button>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -64,71 +105,176 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to clear all selected slots
     function clearSelection() {
-        document.querySelectorAll('.selectable').forEach(cell => {
-            cell.classList.remove('selected-slot');
+        document.querySelectorAll('.time-slot').forEach(slot => {
+            slot.classList.remove('selected-slot');
         });
         selectedSlots = [];
     }
 
-    // Mouse down event to start dragging
-    document.querySelectorAll('.selectable').forEach(cell => {
-        cell.addEventListener('mousedown', (e) => {
+    // Add event listeners to time slots for drag selection
+    document.querySelectorAll('.time-slot').forEach(slot => {
+        slot.addEventListener('mousedown', (e) => {
             isDragging = true;
             clearSelection();
-            cell.classList.add('selected-slot');
-            selectedSlots.push(cell);
+            slot.classList.add('selected-slot');
+            selectedSlots.push(slot.dataset.time);
         });
 
-        // Mouse over event to add time slots to the selection if dragging
-        cell.addEventListener('mouseover', (e) => {
-            if (isDragging && !cell.classList.contains('selected-slot')) {
-                cell.classList.add('selected-slot');
-                selectedSlots.push(cell);
-            }
-        });
-
-        // Mouse up event to stop dragging
-        cell.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                console.log("Selected time slots: ", selectedSlots); // Log or process selected slots
+        slot.addEventListener('mouseover', (e) => {
+            if (isDragging && !slot.classList.contains('selected-slot')) {
+                slot.classList.add('selected-slot');
+                selectedSlots.push(slot.dataset.time);
             }
         });
     });
 
-    // Stop dragging when mouse button is released outside of the table
+    // Stop dragging when mouse up
     document.addEventListener('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
+        isDragging = false;
+    });
+
+    // Validate start and end time inputs
+    const startTimeInput = document.getElementById('start_time');
+    const endTimeInput = document.getElementById('end_time');
+    
+    endTimeInput.addEventListener('change', function() {
+        if(startTimeInput.value && endTimeInput.value) {
+            const startTime = new Date(startTimeInput.value);
+            const endTime = new Date(endTimeInput.value);
+            
+            if(endTime <= startTime) {
+                alert('End time must be after start time');
+                endTimeInput.value = '';
+            }
+            
+            // Check if duration exceeds 2 hours
+            const duration = (endTime - startTime) / (1000 * 60 * 60); // in hours
+            if(duration > 2) {
+                alert('Availability periods cannot exceed 2 hours');
+                endTimeInput.value = '';
+            }
         }
     });
 
-    // Function to update availability for selected slots
+    // Global function to update availability from selected time slots
     window.updateAvailability = function() {
         if (selectedSlots.length === 0) {
             alert("No time slots selected.");
             return;
         }
 
-        const selectedTimes = selectedSlots.map(slot => slot.dataset.time);
-        console.log("Updating availability for slots:", selectedTimes);
-
-        // You can send the selected times to your server using fetch or another method
+        const selectedDate = document.getElementById('selected-date').value;
+        
         fetch("/update-availability/", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
             },
-            body: JSON.stringify({ times: selectedTimes })
+            body: JSON.stringify({
+                times: selectedSlots,
+                activity_type: "{{ activity_type }}",
+                selected_date: selectedDate
+            })
         })
         .then(response => response.json())
         .then(data => {
             alert(data.message);
+            // Reload to show updated availability
+            window.location.reload();
         })
         .catch(error => console.error("Error:", error));
+    };
+    
+    // Global function to toggle availability status
+    window.toggleAvailability = function(availabilityId, currentStatus) {
+        fetch(`/toggle-availability/${availabilityId}/`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                is_available: !currentStatus
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                window.location.reload();
+            } else {
+                alert(data.message || "An error occurred");
+            }
+        })
+        .catch(error => console.error("Error:", error));
+    };
+    
+    // Global function to delete availability
+    window.deleteAvailability = function(availabilityId) {
+        if(confirm("Are you sure you want to delete this availability?")) {
+            fetch(`/delete-availability/${availabilityId}/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    window.location.reload();
+                } else {
+                    alert(data.message || "An error occurred");
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        }
+    };
+    
+    // Function to filter availability by date
+    window.filterByDate = function() {
+        const selectedDate = document.getElementById('availability-date').value;
+        window.location.href = `{% url 'availability' activity_type=activity_type %}?date=${selectedDate}`;
     };
 });
 </script>
 
+<style>
+.time-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin: 20px 0;
+}
+
+.time-slot {
+    padding: 8px;
+    text-align: center;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    background-color: #f9f9f9;
+}
+
+.time-slot:hover {
+    background-color: #e9f7ff;
+}
+
+.time-slot.selected-slot {
+    background-color: #cce5ff;
+    border-color: #007bff;
+}
+
+.error-message {
+    color: red;
+    padding: 10px;
+    margin: 10px 0;
+    background-color: #ffeeee;
+    border: 1px solid #ffcccc;
+    border-radius: 4px;
+}
+
+.date-selector {
+    margin: 15px 0;
+}
+</style>
 {% endblock %}
