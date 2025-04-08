@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from datetime import datetime, timedelta, date
 from .models import Booking, UserProfile, MatchAvailability 
 #  SE HER!!!!!!! MATCH
+from django.contrib.auth.models import User
 from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm 
 from django.contrib.auth.decorators import login_required
 
