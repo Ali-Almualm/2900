@@ -29,4 +29,6 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     # find_matches URL remains, as it finds matches based on the (now renamed) MatchAvailability
     path('matches/<str:activity_type>/', views.find_matches, name='find_matches'),
+    path('create-match-request/', views.create_match_request, name='create_match_request'),
+    path('respond-to-match-request/<int:booking_request_id>/', views.respond_to_match_request, name='respond_to_match_request'),
 ]

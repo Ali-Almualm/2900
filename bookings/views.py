@@ -5,7 +5,7 @@ from django.contrib.auth import logout, login, authenticate
 import json
 from django.http import JsonResponse
 from datetime import datetime, timedelta, date
-from .models import Booking, UserProfile, MatchAvailability 
+from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatch
 #  SE HER!!!!!!! MATCH
 from django.contrib.auth.models import User
 from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm 
@@ -246,9 +246,9 @@ def delete_match_availability(request, match_availability_id):
 
 @login_required
 def find_matches(request, activity_type):
-    """Find users who have matching availability for the given activity"""
+    """Find users who have matching availability for the given activity and handle pending requests."""
     user_profile = request.user.userprofile
-    
+
     # Get the user's skill level for this activity
     if activity_type == 'pool':
         user_skill = user_profile.ranking_pool
@@ -258,55 +258,56 @@ def find_matches(request, activity_type):
         user_skill = user_profile.ranking_table_tennis
     else:
         user_skill = 0
-    
+
     # Get the user's availability for this activity
-    user_match_availability  = MatchAvailability.objects.filter(
+    user_match_availability = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
         is_available=True
     )
-    
-    if not user_match_availability .exists():
+
+    if not user_match_availability.exists():
         return render(request, 'bookings/matches.html', {
             'activity_type': activity_type,
             'matches': [],
+            'pending_requests': [],
             'error': 'You need to set your match availability before finding matches'
         })
-    
+
     # Find all other users with availability for this activity
     matches = []
     other_users = User.objects.exclude(id=request.user.id)
-    
+
     for other_user in other_users:
         # Get their availability
-        other_match_availability  = MatchAvailability.objects.filter(
+        other_match_availability = MatchAvailability.objects.filter(
             user=other_user,
             booking_type=activity_type,
             is_available=True
         )
-        
+
         if not other_match_availability.exists():
             continue
-        
+
         # Check for overlapping availability
         overlapping_times = []
-        
+
         for user_slot in user_match_availability:
             for other_slot in other_match_availability:
                 # Check if times overlap
-                if (user_slot.start_time < other_slot.end_time and 
-                    user_slot.end_time > other_slot.start_time):
-                    
+                if (user_slot.start_time < other_slot.end_time and
+                        user_slot.end_time > other_slot.start_time):
+
                     # Calculate the overlap period
                     overlap_start = max(user_slot.start_time, other_slot.start_time)
                     overlap_end = min(user_slot.end_time, other_slot.end_time)
-                    
+
                     overlapping_times.append({
                         'start': overlap_start,
                         'end': overlap_end,
                         'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
                     })
-        
+
         if overlapping_times:
             # Get other user's skill level
             try:
@@ -319,10 +320,10 @@ def find_matches(request, activity_type):
                     other_skill = other_profile.ranking_table_tennis
                 else:
                     other_skill = 0
-                
+
                 # Calculate skill difference
                 skill_difference = abs(user_skill - other_skill)
-                
+
                 matches.append({
                     'user': other_user,
                     'overlapping_times': overlapping_times,
@@ -331,13 +332,21 @@ def find_matches(request, activity_type):
                 })
             except UserProfile.DoesNotExist:
                 continue
-    
+
     # Sort matches by skill difference (closer matches first)
     matches.sort(key=lambda x: x['skill_difference'])
-    
+
+    # Fetch pending match requests for the logged-in user
+    pending_requests = BookingRequestmatch.objects.filter(
+        requested_player=request.user,
+        is_confirmed=False,
+        is_rejected=False
+    )
+
     return render(request, 'bookings/matches.html', {
         'activity_type': activity_type,
-        'matches': matches
+        'matches': matches,
+        'pending_requests': pending_requests
     })
 
 @login_required
@@ -501,3 +510,82 @@ def login_user_view(request):
 def logout_view(request):
     logout(request)
     return redirect('login')
+
+
+
+@login_required
+@csrf_exempt
+@login_required
+@csrf_exempt
+def create_match_request(request):
+    """Create a match request from one user to another."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            requested_player_id = data.get('requested_player_id')
+            activity_type = data.get('activity_type')
+            start_time = data.get('start_time')
+            end_time = data.get('end_time')
+
+            if not (requested_player_id and activity_type and start_time and end_time):
+                return JsonResponse({'success': False, 'message': 'Missing required fields'}, status=400)
+
+            requested_player = User.objects.get(id=requested_player_id)
+
+            # Get the requester's skill rating based on the activity type
+            requester_skill = None
+            if activity_type == 'pool':
+                requester_skill = request.user.userprofile.ranking_pool
+            elif activity_type == 'switch':
+                requester_skill = request.user.userprofile.ranking_switch
+            elif activity_type == 'table_tennis':
+                requester_skill = request.user.userprofile.ranking_table_tennis
+
+            # Create the match request and store the requester's skill rating
+            BookingRequestmatch.objects.create(
+                requester=request.user,
+                requested_player=requested_player,
+                activity_type=activity_type,
+                start_time=start_time,
+                end_time=end_time,
+                requester_skill=requester_skill  # Save the skill rating
+            )
+            return JsonResponse({'success': True, 'message': 'Match request sent successfully'})
+        except User.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Requested player does not exist'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)
+
+@login_required
+@csrf_exempt
+def respond_to_match_request(request, booking_request_id):
+    """Respond to a match request by confirming or rejecting it."""
+    if request.method == 'POST':
+        action = request.POST.get('action')  # 'confirm' or 'reject'
+        try:
+            booking_request = BookingRequestmatch.objects.get(id=booking_request_id, requested_player=request.user)
+
+            if action == 'confirm':
+                # Create a new booking automatically
+                Booking.objects.create(
+                    user_id=request.user.id,
+                    name=f"Match between {booking_request.requester.username} and {request.user.username}",
+                    start_time=booking_request.start_time,
+                    end_time=booking_request.end_time,
+                    booking_type=booking_request.activity_type
+                )
+                booking_request.is_confirmed = True
+                booking_request.save()
+                return JsonResponse({'success': True, 'message': 'Booking confirmed and created successfully'})
+
+            elif action == 'reject':
+                booking_request.is_rejected = True
+                booking_request.save()
+                return JsonResponse({'success': True, 'message': 'Match request rejected'})
+
+        except BookingRequestmatch.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Match request does not exist'}, status=404)
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)

@@ -25,7 +25,23 @@ class MatchAvailability(models.Model): # Renamed
         unique_together = ('user', 'booking_type', 'start_time', 'end_time')
         verbose_name = "Match Availability" # Optional: For Admin
         verbose_name_plural = "Match Availabilities" # Optional: For Admin
+class BookingRequestmatch(models.Model):
+    requester = models.ForeignKey(User, on_delete=models.CASCADE, related_name='booking_requests_made')
+    requested_player = models.ForeignKey(User, on_delete=models.CASCADE, related_name='booking_requests_received')
+    activity_type = models.CharField(max_length=50, choices=[
+        ('pool', 'Pool'),
+        ('switch', 'Nintendo Switch'),
+        ('table_tennis', 'Table Tennis'),
+    ])
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    is_confirmed = models.BooleanField(default=False)
+    is_rejected = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    requester_skill = models.IntegerField(null=True, blank=True)  # Add this field
 
+    def __str__(self):
+        return f"{self.requester.username} -> {self.requested_player.username} ({self.start_time} - {self.end_time})"
 class Booking(models.Model):
     BOOKING_TYPES = [
         ('pool', 'Pool'),
