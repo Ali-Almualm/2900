@@ -5,10 +5,13 @@ from django.contrib.auth import logout, login, authenticate
 import json
 from django.http import JsonResponse
 from datetime import datetime, timedelta, date
-from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatch
+from django.contrib import messages
+from django.urls import reverse # For redirects
+
+from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatch, Competition, CompetitionParticipant
 #  SE HER!!!!!!! MATCH
 from django.contrib.auth.models import User
-from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm 
+from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm, CompetitionForm
 from django.contrib.auth.decorators import login_required
 
 @login_required
@@ -75,57 +78,86 @@ def cancel_booking(request, booking_id):
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
 def index(request):
-    # Get selected date from query parameters (default to today)
     date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
     selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-    # Generate 15-minute time slots for the selected date
     time_slots = []
     start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
     end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
 
-    while start_time < end_time:
-        slot_str = f"{start_time.strftime('%H:%M')} - {(start_time + timedelta(minutes=15)).strftime('%H:%M')}"
-        time_slots.append(slot_str)
-        start_time += timedelta(minutes=15)
+    current = start_time
+    while current < end_time:
+        slot_end = current + timedelta(minutes=15)
+        time_slots.append((current, slot_end)) # Store datetime objects
+        current = slot_end
 
-    # Fetch all bookings for the selected date
     bookings = Booking.objects.filter(start_time__date=selected_date)
+    competitions = Competition.objects.filter(start_time__date=selected_date) # Fetch competitions
 
-    # Organize timetable per activity type
     ACTIVITY_TYPES = ["pool", "switch", "table_tennis"]
     timetable_by_activity = {activity: [] for activity in ACTIVITY_TYPES}
 
-    for time_slot in time_slots:
-        # Parse out the slot's start/end times
-        start_str, end_str = time_slot.split(" - ")
-        start_hour, start_minute = map(int, start_str.split(":"))
-        slot_start_time = datetime.combine(selected_date, datetime.min.time()).replace(
-            hour=start_hour, minute=start_minute
-        )
-        slot_end_time = slot_start_time + timedelta(minutes=15)
+    for slot_start_time, slot_end_time in time_slots:
+        time_slot_str = f"{slot_start_time.strftime('%H:%M')} - {slot_end_time.strftime('%H:%M')}"
 
         for activity in ACTIVITY_TYPES:
-            # Check for any booking that overlaps this 15-min slot
-            booked_entry = bookings.filter(
-                booking_type=activity,
+            slot_info = {
+                "time_slot": time_slot_str,
+                "start_datetime": slot_start_time, # Keep for potential use
+                "status": "Available",
+                "details": None,
+                "type": "available", # 'available', 'booked', 'competition'
+                "competition_id": None,
+                "can_join_competition": False,
+                "is_full": False,
+                "booked_by_user": False,
+                "booking_id": None,
+                "user_id": None,
+            }
+
+            # 1. Check for Competitions first (they might override bookings in display)
+            competition_entry = competitions.filter(
+                activity_type=activity,
                 start_time__lt=slot_end_time,
                 end_time__gt=slot_start_time
             ).first()
 
-            timetable_by_activity[activity].append({
-                "time_slot": time_slot,
-                "status": "Booked" if booked_entry else "Available",
-                "name": booked_entry.name if booked_entry else None,
-                "booking_id": booked_entry.id if booked_entry else None,
-                "user_id": booked_entry.user_id if booked_entry else None,
-                "booking_type": activity
-            })
+            if competition_entry:
+                slot_info.update({
+                    "status": "Competition",
+                    "details": f"Max: {competition_entry.max_joiners}, Joined: {competition_entry.participants.count()}",
+                    "type": "competition",
+                    "competition_id": competition_entry.id,
+                    "is_full": competition_entry.is_full(),
+                    "can_join_competition": request.user.is_authenticated and competition_entry.can_join(request.user),
+                    "name": f"Comp by {competition_entry.creator.username}" # Indicate creator
+                })
+            else:
+                # 2. Check for Bookings if no competition
+                booked_entry = bookings.filter(
+                    booking_type=activity,
+                    start_time__lt=slot_end_time,
+                    end_time__gt=slot_start_time
+                ).first()
+
+                if booked_entry:
+                    slot_info.update({
+                        "status": "Booked",
+                        "type": "booked",
+                        "name": booked_entry.name,
+                        "booking_id": booked_entry.id,
+                        "user_id": booked_entry.user_id,
+                        "booked_by_user": request.user.is_authenticated and booked_entry.name == request.user.username
+                    })
+
+            timetable_by_activity[activity].append(slot_info)
 
     return render(request, 'bookings/index.html', {
         "timetable_by_activity": timetable_by_activity,
-        "selected_date": selected_date
+        "selected_date": selected_date,
+        "user": request.user # Ensure user is passed for template logic
     })
+
 
 @login_required
 def select_match_availability_activity_view(request):
@@ -368,72 +400,91 @@ def book(request):
         'activity': activity_type
     })
 
-
 def activity_view(request, activity_type):
-    # Get selected date (default to today)
     date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
     selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-    # Generate 15-minute slots for the day (from 00:00 to 23:59)
     start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
     end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
     time_slots = []
     current = start_time
     while current < end_time:
         slot_end = current + timedelta(minutes=15)
-        time_slots.append((current.time(), slot_end.time()))
+        time_slots.append((current, slot_end))
         current = slot_end
 
-    # Get all bookings for this date and activity
     bookings = Booking.objects.filter(
         start_time__date=selected_date,
         booking_type=activity_type
     ).order_by('start_time')
 
-    # Build the timetable: for each 15-minute slot, check for overlap with a booking
+    competitions = Competition.objects.filter( # Fetch competitions
+        start_time__date=selected_date,
+        activity_type=activity_type
+    ).order_by('start_time')
+
     timetable = []
     for slot_start, slot_end in time_slots:
         slot_start_str = slot_start.strftime("%H:%M")
         slot_end_str = slot_end.strftime("%H:%M")
         time_slot_str = f"{slot_start_str} - {slot_end_str}"
 
-        # Combine the slot times with the selected date to get full datetimes
-        full_slot_start = datetime.combine(selected_date, slot_start)
-        full_slot_end = datetime.combine(selected_date, slot_end)
+        slot_info = {
+            "time_slot": time_slot_str,
+            "status": "Available",
+            "details": None,
+            "type": "available",
+            "competition_id": None,
+            "can_join_competition": False,
+            "is_full": False,
+            "name": "-",
+            "booked_by_user": False,
+            "booking_id": None,
+            "user_id": None,
+        }
 
-        # Check for any booking overlapping this slot (i.e. booking starts before slot end and ends after slot start)
-        booking_found = bookings.filter(
-            start_time__lt=full_slot_end,
-            end_time__gt=full_slot_start
+        # Check for Competitions first
+        competition_entry = competitions.filter(
+            start_time__lt=slot_end,
+            end_time__gt=slot_start
         ).first()
 
-        if booking_found:
-            occupied = True
-            booked_by = booking_found.name
-            booking_id = booking_found.id
-            user_id = booking_found.user_id  # Ensure this is stored as a string (e.g. the user's email)
+        if competition_entry:
+            slot_info.update({
+                "status": "Competition",
+                "details": f"Max: {competition_entry.max_joiners}, Joined: {competition_entry.participants.count()}",
+                "type": "competition",
+                "competition_id": competition_entry.id,
+                "is_full": competition_entry.is_full(),
+                 "can_join_competition": request.user.is_authenticated and competition_entry.can_join(request.user),
+                 "name": f"Comp by {competition_entry.creator.username}"
+            })
         else:
-            occupied = False
-            booked_by = ""
-            booking_id = ""
-            user_id = ""
+            # Check for Bookings if no competition
+            booking_found = bookings.filter(
+                start_time__lt=slot_end,
+                end_time__gt=slot_start
+            ).first()
 
-        timetable.append({
-            "time_slot": time_slot_str,
-            "start_time": slot_start_str,
-            "status": "Booked" if occupied else "Available",
-            "name": booked_by,
-            "booking_id": booking_id,
-            "user_id": user_id
-        })
+            if booking_found:
+                 slot_info.update({
+                    "status": "Booked",
+                    "type": "booked",
+                    "name": booking_found.name,
+                    "booking_id": booking_found.id,
+                    "user_id": booking_found.user_id,
+                    "booked_by_user": request.user.is_authenticated and booking_found.name == request.user.username
+                 })
+
+        timetable.append(slot_info)
 
     return render(request, 'bookings/activity.html', {
         "timetable": timetable,
         "activity": activity_type,
         "selected_date": selected_date,
-        "title": dict(Booking.BOOKING_TYPES).get(activity_type)
+        "title": dict(Booking.BOOKING_TYPES).get(activity_type),
+        "user": request.user # Ensure user is passed
     })
-
 
 @login_required
 def save_match_availability(request, activity_type):
@@ -589,3 +640,68 @@ def respond_to_match_request(request, booking_request_id):
             return JsonResponse({'success': False, 'message': 'Match request does not exist'}, status=404)
 
     return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)
+
+
+@login_required
+def create_competition(request):
+    if request.method == 'POST':
+        form = CompetitionForm(request.POST)
+        if form.is_valid():
+            competition = form.save(commit=False)
+            competition.creator = request.user
+            competition.save()
+            # Automatically add the creator as the first participant
+            CompetitionParticipant.objects.create(competition=competition, user=request.user)
+            messages.success(request, f"Competition for {competition.get_activity_type_display()} created successfully!")
+            # Redirect to the activity page for the date of the competition
+            activity_url = reverse(competition.activity_type) # e.g., reverse('pool')
+            return redirect(f"{activity_url}?date={competition.start_time.strftime('%Y-%m-%d')}")
+        else:
+             # Pass the form with errors back to the template
+            pass # Fall through to render the form again
+    else:
+        form = CompetitionForm()
+
+    return render(request, 'bookings/create_competition.html', {'form': form})
+
+@login_required
+@csrf_exempt # Use csrf_exempt carefully or handle CSRF properly via JS fetch headers
+def join_competition(request, competition_id):
+    if request.method == 'POST':
+        competition = get_object_or_404(Competition, id=competition_id)
+        user = request.user
+
+        # Check if user is the creator (already joined)
+        if competition.creator == user:
+             return JsonResponse({'success': False, 'message': 'You are the creator of this competition.'}, status=400)
+
+        # Check if already joined
+        if competition.participants.filter(user=user).exists():
+            return JsonResponse({'success': False, 'message': 'You have already joined this competition.'}, status=400)
+
+        # Check if full
+        if competition.is_full():
+            return JsonResponse({'success': False, 'message': 'This competition is already full.'}, status=400)
+
+        # Check for time conflicts with user's existing bookings/competitions (optional but good)
+        user_bookings = Booking.objects.filter(
+            user_id=str(user.id), # Assuming user_id is string in Booking model
+            start_time__lt=competition.end_time,
+            end_time__gt=competition.start_time
+        )
+        user_competitions = CompetitionParticipant.objects.filter(
+            user=user,
+            competition__start_time__lt=competition.end_time,
+            competition__end_time__gt=competition.start_time
+        ).exclude(competition=competition) # Don't compare with itself
+
+        if user_bookings.exists() or user_competitions.exists():
+             return JsonResponse({'success': False, 'message': 'You have a time conflict with this competition.'}, status=400)
+
+
+        # Join the competition
+        CompetitionParticipant.objects.create(competition=competition, user=user)
+        return JsonResponse({'success': True, 'message': 'Successfully joined the competition!'})
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
+

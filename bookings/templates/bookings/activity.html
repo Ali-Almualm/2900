@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% load static custom_filters %}
+{% load static custom_filters %} {# Ensure custom_filters are loaded if needed #}
+
 {% block title %}{{ title }} Timetable{% endblock %}
 
 {% block content %}
@@ -7,34 +8,67 @@
   <a href="{% url 'match_availability' activity_type=activity %}">
     <button>Select Match Availability</button>
   </a>
-  
+
   <label for="selected-date">Select Date:</label>
   <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
-  
+
   <div class="table-container">
     <table class="timetable">
       <thead>
           <tr>
               <th>Time Slot</th>
               <th>Status</th>
-              <th>Booked By</th>
+              <th>Booked By / Comp Details</th> {# Changed Header #}
               <th>Action</th>
           </tr>
       </thead>
       <tbody>
           {% for slot in timetable %}
-          <tr class="selectable" data-time="{{ slot.time_slot|split:' - '|first }}">
+           {# Updated class based on slot type and added data attributes #}
+          <tr class="selectable {% if slot.type == 'competition' %}competition-slot{% endif %}"
+              data-time="{{ slot.time_slot|split:' - '|first }}"
+              data-activity="{{ activity }}"
+              data-date="{{ selected_date|date:'Y-m-d' }}"> {# Add date if needed by JS #}
+
               <td>{{ slot.time_slot }}</td>
-              <td class="status-{{ slot.status|lower }}">{{ slot.status }}</td>
-              <td>{{ slot.name|default:"-" }}</td>
+
+              {# Updated Status Cell #}
+              <td class="status-{{ slot.status|lower }}">
+                 {{ slot.status }}
+              </td>
+
+              {# Updated Details/Name Cell #}
               <td>
-                  {% if slot.status == "Booked" and slot.name == user.username %}
-                      <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel</button>
-                  {% elif slot.status == "Available" %}
+                  {% if slot.type == 'competition' %}
+                       <small>By: {{ slot.name|default:'-' }} ({{ slot.details }})</small>
+                  {% else %}
+                      {{ slot.name|default:"-" }}
+                  {% endif %}
+              </td>
+
+              {# Updated Action Cell #}
+              <td>
+                  {% if slot.type == "booked" and slot.booked_by_user %}
+                      <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel Booking</button>
+                  {% elif slot.type == "competition" %}
                       {% if user.is_authenticated %}
-                          <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                          {% if slot.can_join_competition %}
+                              <button onclick="joinCompetition('{{ slot.competition_id }}')">Join Competition</button>
+                          {% elif slot.is_full %}
+                              <span style="color: orange; font-weight: bold;">Full</span>
+                          {% else %}
+                               <span style="color: gray;">Joined/Creator</span>
+                          {% endif %}
                       {% else %}
-                          <p>Please <a href="{% url 'login' %}">log in</a> to book a time slot.</p>
+                           <a href="{% url 'login' %}?next={{ request.path }}%3Fdate={{ selected_date|date:'Y-m-d' }}">Login to Join</a> {# Pass date in next param #}
+                      {% endif %}
+                  {% elif slot.type == "available" %}
+                      {% if user.is_authenticated %}
+                          {# Option 1: Simple Book Button (if not using drag-select) #}
+                          <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
+                          {# Option 2: If using drag select, this button might not be needed here, rely on bookSelectedRange #}
+                      {% else %}
+                          <p><a href="{% url 'login' %}?next={{ request.path }}%3Fdate={{ selected_date|date:'Y-m-d' }}">Log in</a> to book.</p>
                       {% endif %}
                   {% else %}
                       -
@@ -47,9 +81,9 @@
   </div>
 
   {% if user.is_authenticated %}
-  <!-- Single button to book the selected time range -->
-  <button id="book-selected-range" onclick="bookSelectedRange()">Book Selected Range</button>
-  
+  {# Only show if using drag-select, hide if using single slot booking button above #}
+  <button id="book-selected-range" onclick="bookSelectedRange()" style="margin-top: 15px;">Book Selected Range</button>
+
   <div id="booking-overlay" class="overlay" style="display: none;">
     <div class="overlay-content">
       <span class="close" onclick="closeBookingForm()">&times;</span>
@@ -60,154 +94,267 @@
           <label for="selected-date-display">Selected Date:</label>
           <input type="text" id="selected-date-display" name="booking_date" readonly>
         </div>
-  
+
         <div class="form-group">
           <label for="selected-time">Selected Time:</label>
-          <input type="text" id="selected-time" name="start_time" readonly>
+          <input type="text" id="selected-time" name="start_time" readonly> {# This holds the time range string #}
         </div>
-  
+
         <div class="form-group">
           <label for="username">Username:</label>
           <input type="text" id="username" name="username" value="{{ user.username }}" readonly>
         </div>
-  
+
+         <div class="form-group">
+             <label for="form-name">Name:</label> {# Name field for Booking model #}
+             <input type="text" id="form-name" name="name" value="{{ user.username }}" readonly>
+         </div>
+
         <div class="form-group">
           <label for="booking_type">Activity:</label>
           <input type="text" id="booking_type" name="booking_type" readonly>
         </div>
-  
-        <button type="submit">Book Slot</button>
+
+        <button type="submit">Confirm Booking</button>
       </form>
     </div>
   </div>
   {% else %}
-  <p>Please <a href="{% url 'login' %}">log in</a> to book a time slot.</p>
+  <p style="margin-top: 15px;">Please <a href="{% url 'login' %}?next={{ request.path }}%3Fdate={{ selected_date|date:'Y-m-d' }}">log in</a> to book a time slot.</p>
   {% endif %}
-  
+
   <script>
     function changeDate() {
       let selectedDate = document.getElementById("selected-date").value;
       console.log("📆 Selected Date from Calendar:", selectedDate);
-      window.location.href = "?date=" + selectedDate;
+       // Construct URL correctly for activity view
+      window.location.href = `{% url activity activity_type=activity %}?date=${selectedDate}`;
     }
-  
-    // (Optional) This function remains in case you want to open the overlay by passing a time range.
+
+    // Function to open the overlay - used by simple 'Book' button
     function openBookingForm(timeSlot, dateSlot, activity) {
-      document.getElementById("selected-time").value = timeSlot;
+      document.getElementById("selected-time").value = timeSlot; // Single slot time
       document.getElementById("selected-date-display").value = dateSlot;
       document.getElementById("booking_type").value = activity;
+       document.getElementById("form-name").value = "{{ user.username }}"; // Set name
       document.getElementById("booking-overlay").style.display = "flex";
     }
-  
+
     function closeBookingForm() {
       document.getElementById("booking-overlay").style.display = "none";
-      document.getElementById("booking-form").reset();
+      // Don't reset if values are populated dynamically
+      // document.getElementById("booking-form").reset();
     }
-  
-    document.getElementById("booking-form").addEventListener("submit", function (event) {
-      event.preventDefault();
-      const formData = new FormData(this);
-  
-      fetch("{% url 'api_book' %}", {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": "{{ csrf_token }}",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(Object.fromEntries(formData))
-      })
-      .then(response => response.json())
-      .then(data => {
-        alert(data.message);
-        closeBookingForm();
-        location.reload();
-      })
-      .catch(error => console.error("Error:", error));
-    });
-    
+
+    // Event listener for the booking form submission
+    const bookingFormActivity = document.getElementById("booking-form");
+    if(bookingFormActivity) {
+        bookingFormActivity.addEventListener("submit", function (event) {
+          event.preventDefault();
+          const formData = new FormData(this);
+          let bookingData = {};
+          formData.forEach((value, key) => bookingData[key] = value);
+
+          // Ensure date is included
+          // bookingData['booking_date'] = document.getElementById("selected-date-display").value;
+
+          fetch("{% url 'api_book' %}", {
+            method: "POST",
+            headers: {
+              "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(bookingData)
+          })
+          .then(response => response.json())
+          .then(data => {
+            alert(data.message);
+            if(data.message.includes("created")) {
+                closeBookingForm();
+                location.reload();
+            }
+          })
+          .catch(error => {
+              console.error("Error:", error);
+              alert("An error occurred during booking.");
+          });
+        });
+    }
+
+
     function cancelBooking(bookingId) {
+       if (!confirm("Are you sure you want to cancel this booking?")) {
+           return;
+       }
       fetch(`/cancel/${bookingId}/`, {
         method: "POST",
         headers: {
-          "X-CSRFToken": "{{ csrf_token }}",
+          "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
           "Content-Type": "application/json"
         }
       })
       .then(response => response.json())
       .then(data => {
         alert(data.message);
-        location.reload();
+        if(data.message.includes("cancelled")) {
+            location.reload();
+        }
       })
-      .catch(error => console.error("Error:", error));
-    }
-  </script>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    let isDragging = false;
-    let selectedSlots = [];
-
-    function clearSelection() {
-        document.querySelectorAll('.selectable').forEach(cell => {
-            cell.classList.remove('selected-slot');
-        });
-        selectedSlots = [];
+      .catch(error => {
+          console.error("Error:", error);
+          alert("An error occurred cancelling the booking.");
+      });
     }
 
-    document.querySelectorAll('.selectable').forEach(cell => {
-        cell.addEventListener('mousedown', (e) => {
-            clearSelection();
-            isDragging = true;
-            cell.classList.add('selected-slot');
-            selectedSlots.push(cell);
+    // --- Function to Join Competition ---
+    function joinCompetition(competitionId) {
+        if (!confirm("Are you sure you want to join this competition?")) {
+            return;
+        }
+        fetch(`/join-competition/${competitionId}/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                "Content-Type": "application/json"
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if(data.success) {
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error("Error joining competition:", error);
+            alert("An error occurred.");
         });
+    }
 
-        cell.addEventListener('mouseover', (e) => {
-            if (isDragging) {
-                if (!cell.classList.contains('selected-slot') && selectedSlots.length < 8) {
-                    cell.classList.add('selected-slot');
-                    selectedSlots.push(cell);
+    // --- Drag Select Logic (Keep if you use it) ---
+    document.addEventListener('DOMContentLoaded', function() {
+        let isDragging = false;
+        let selectedSlots = []; // Stores the DOM elements
+
+        function clearSelection() {
+            document.querySelectorAll('.selectable').forEach(cell => {
+                cell.classList.remove('selected-slot');
+            });
+            selectedSlots = [];
+            // Optionally hide the 'Book Selected Range' button
+            // document.getElementById('book-selected-range').style.display = 'none';
+        }
+
+        document.querySelectorAll('.table-container .selectable').forEach(cell => {
+            // Only allow dragging on available slots
+            if (!cell.closest('tr').querySelector('.status-available')) {
+                 return; // Skip booked/competition slots for starting drag
+            }
+
+            cell.addEventListener('mousedown', (e) => {
+                // Check again if it's available before starting drag
+                 if (!cell.closest('tr').querySelector('.status-available')) {
+                     return;
+                 }
+                clearSelection();
+                isDragging = true;
+                cell.classList.add('selected-slot');
+                selectedSlots.push(cell);
+                 // Show the 'Book Selected Range' button
+                 // document.getElementById('book-selected-range').style.display = 'inline-block';
+
+            });
+
+            cell.addEventListener('mouseover', (e) => {
+                if (isDragging) {
+                     // Only select available slots during drag
+                    if (!cell.classList.contains('selected-slot') &&
+                        cell.closest('tr').querySelector('.status-available') &&
+                        selectedSlots.length < 8) { // Limit selection to 8 slots (2 hours)
+
+                        // Basic continuity check (optional, can be complex)
+                        // This simple check assumes rows are contiguous in time
+                        // let lastSelectedTime = selectedSlots[selectedSlots.length - 1].dataset.time;
+                        // let currentTime = cell.dataset.time;
+                        // Add logic here to ensure currentTime is immediately after lastSelectedTime
+
+                        cell.classList.add('selected-slot');
+                        selectedSlots.push(cell);
+                    }
                 }
+            });
+
+            // No mouseup on cell needed, handled by document listener
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                // Keep selection visible until 'Book Selected Range' is clicked or new selection starts
             }
         });
 
-        cell.addEventListener('mouseup', () => {
-            if (isDragging) isDragging = false;
-        });
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isDragging) isDragging = false;
-    });
-
-    function add15Minutes(timeStr) {
-        let [hours, minutes] = timeStr.split(":").map(Number);
-        minutes += 15;
-        if (minutes >= 60) {
-            minutes -= 60;
-            hours += 1;
+        // Helper to add 15 minutes (ensure robust time math if needed)
+        function add15Minutes(timeStr) {
+            // Basic check for valid format
+            if (!timeStr || !timeStr.includes(':')) return null;
+            let [hours, minutes] = timeStr.split(":").map(Number);
+            minutes += 15;
+            if (minutes >= 60) {
+                minutes -= 60;
+                hours += 1;
+                if (hours >= 24) hours = 0; // Handle midnight wrap
+            }
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         }
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-    }
 
-    function updateBookingForm() {
-        if (!selectedSlots.length) return;
-        const startSlot = selectedSlots[0].dataset.time;
-        const endSlot = add15Minutes(selectedSlots[selectedSlots.length - 1].dataset.time);
+        // Function to update the booking form when 'Book Selected Range' is clicked
+        function updateBookingFormForRange() {
+            if (!selectedSlots.length) return;
 
-        document.getElementById("selected-time").value = `${startSlot} - ${endSlot}`;
-        document.getElementById("selected-date-display").value = document.getElementById("selected-date").value;
-        document.getElementById("booking_type").value = "{{ activity }}";
-        document.getElementById("booking-overlay").style.display = "flex";
-    }
+            // Sort selected slots by time just in case mouseover order wasn't perfect
+            selectedSlots.sort((a, b) => {
+                 return a.dataset.time.localeCompare(b.dataset.time);
+            });
 
-    window.bookSelectedRange = function() {
-        if (selectedSlots.length === 0) {
-            alert("No slots selected. Please click and drag over the desired time range.");
-            return;
+
+            const startSlotTime = selectedSlots[0].dataset.time;
+            const lastSlotTime = selectedSlots[selectedSlots.length - 1].dataset.time;
+            const endSlotTime = add15Minutes(lastSlotTime); // Calculate end time
+
+            if (!startSlotTime || !endSlotTime) {
+                 alert("Error calculating time range.");
+                 return;
+            }
+
+
+            document.getElementById("selected-time").value = `${startSlotTime} - ${endSlotTime}`;
+            document.getElementById("selected-date-display").value = document.getElementById("selected-date").value;
+            document.getElementById("booking_type").value = "{{ activity }}";
+            document.getElementById("form-name").value = "{{ user.username }}"; // Set name
+            document.getElementById("booking-overlay").style.display = "flex";
         }
-        updateBookingForm();
-    };
-});
-</script>
+
+        // Assign function to the button
+        window.bookSelectedRange = function() {
+            if (selectedSlots.length === 0) {
+                alert("No slots selected. Please click and drag over the desired available time range.");
+                return;
+            }
+             // Check if any selected slot is NOT available (e.g., if status changed dynamically)
+             for (const slot of selectedSlots) {
+                  if (!slot.closest('tr').querySelector('.status-available')) {
+                      alert("Your selection includes slots that are no longer available. Please re-select.");
+                      clearSelection();
+                      return;
+                  }
+              }
+            updateBookingFormForRange();
+        };
+
+         // Initially hide the range button if not using drag-select by default
+         // document.getElementById('book-selected-range').style.display = 'none';
+
+    });
+    </script>
 {% endblock %}

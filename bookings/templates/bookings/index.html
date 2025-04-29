@@ -5,16 +5,13 @@
 {% block content %}
     <h2>Timetable (15-Minute Slots)</h2>
 
-    <!-- Date Selector -->
     <label for="selected-date">Select Date:</label>
     <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
 
 
-    <!-- Parent container for timetables -->
     <div class="timetable-container">
         {% for activity, slots in timetable_by_activity.items %}
             <div class="activity-container">
-                <!-- Toggle Button for Each Activity -->
                 <button onclick="toggleActivity('{{ activity }}')">
                     Show/Hide {% if activity == "pool" %}Pool
                     {% elif activity == "switch" %}Nintendo Switch
@@ -22,7 +19,6 @@
                     {% endif %}
                 </button>
 
-                <!-- Timetable Section for Each Activity (Initially Hidden) -->
                 <div id="timetable-{{ activity }}" class="timetable" style="display: none;">
                     <h3>
                         {% if activity == "pool" %}Pool
@@ -31,37 +27,72 @@
                         {% endif %}
                     </h3>
                     <table>
-                        <tr>
-                            <th>Time Slot</th>
-                            <th>Status</th>
-                            <th>Booked By</th>
-                            <th>Action</th>
-                        </tr>
-                        {% for slot in slots %}
-                        <tr class="{% if slot.status == 'Available' %}clickable{% endif %}" 
-                            data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
-                            <td>{{ slot.time_slot }}</td>
-                            <td {% if slot.status == "Booked" %} style="color: red;"{% else %}style="color: green;"{% endif %}> 
-                                {{ slot.status }}
-                            </td>
-                            <td>
-                                {% if slot.status == "Booked" and slot.name == user.username  %}
-                                    <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel</button>
-                                {% endif %}
-                            </td>
-                                                    
-                            <td>{{ slot.name|default:"-" }}</td>
-                            <td>
-                                {% if slot.status == "Available" %}
-                                    {% if user.is_authenticated %}
-                                        <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date }}', '{{ activity }}')">Book</button>
+                        <thead> {# Added thead for structure #}
+                            <tr>
+                                <th>Time Slot</th>
+                                <th>Status</th>
+                                <th>Booked By / Comp Details</th> {# Changed Header #}
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody> {# Added tbody for structure #}
+                            {% for slot in slots %}
+                            {# Updated class based on slot type #}
+                            <tr class="{% if slot.type == 'available' %}clickable{% elif slot.type == 'competition' %}competition-slot{% endif %}"
+                                data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
+
+                                <td>{{ slot.time_slot }}</td>
+
+                                {# Updated Status Cell #}
+                                <td {% if slot.type == "booked" %} style="color: red;"
+                                    {% elif slot.type == "competition" %} style="color: blue;"
+                                    {% else %} style="color: green;" {% endif %}>
+                                    {{ slot.status }}
+                                </td>
+
+                                {# Updated Details/Name Cell #}
+                                <td>
+                                    {% if slot.type == 'competition' %}
+                                         <small>By: {{ slot.name|default:'-' }} ({{ slot.details }})</small>
                                     {% else %}
-                                        <p>Please <a href="{% url 'login' %}">log in</a> to book a time slot.</p>
+                                        {{ slot.name|default:"-" }}
                                     {% endif %}
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
+                                </td>
+
+                                {# Updated Action Cell #}
+                                <td>
+                                    {% if slot.type == "booked" and slot.booked_by_user %}
+                                        {# Allow cancellation if booked by the current user #}
+                                        <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel Booking</button>
+                                    {% elif slot.type == "competition" %}
+                                        {# Competition Actions #}
+                                        {% if user.is_authenticated %}
+                                            {% if slot.can_join_competition %}
+                                                <button onclick="joinCompetition('{{ slot.competition_id }}')">Join Competition</button>
+                                            {% elif slot.is_full %}
+                                                <span style="color: orange; font-weight: bold;">Full</span>
+                                            {% else %}
+                                                {# User is creator or already joined #}
+                                                 <span style="color: gray;">Joined/Creator</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <a href="{% url 'login' %}?next={{ request.path }}">Login to Join</a>
+                                        {% endif %}
+                                    {% elif slot.type == "available" %}
+                                        {# Available Slot Actions #}
+                                        {% if user.is_authenticated %}
+                                            <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
+                                        {% else %}
+                                            <p><a href="{% url 'login' %}?next={{ request.path }}">Log in</a> to book.</p>
+                                        {% endif %}
+                                    {% else %}
+                                     {# Default case - should not happen often if logic is correct #}
+                                     -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -69,9 +100,8 @@
     </div>
 
 
-    <!-- Booking Form Overlay -->
     {% if user.is_authenticated %}
-    <div id="booking-overlay" class="overlay">
+    <div id="booking-overlay" class="overlay" style="display: none;"> {# Ensure initial display is none #}
         <div class="overlay-content">
             <span class="close" onclick="closeBookingForm()">&times;</span>
             <h2>Book Time Slot</h2>
@@ -93,7 +123,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="name">Name:</label>
+                    <label for="name">Name:</label> {# Keep name field if your Booking model requires it #}
                     <input type="text" id="name" name="name" value="{{ user.username }}" readonly>
                 </div>
 
@@ -108,7 +138,6 @@
     </div>
     {% endif %}
 
-    <!-- JavaScript -->
     <script>
         function changeDate() {
             let selectedDate = document.getElementById("selected-date").value;
@@ -117,38 +146,59 @@
         }
 
         function openBookingForm(timeSlot, dateSlot, activity) {
+            // Ensure the date format matches what the view expects if needed,
+            // but reading from the input value is usually fine.
             document.getElementById("selected-time").value = timeSlot;
-            document.getElementById("selected-date-display").value = dateSlot;
+            document.getElementById("selected-date-display").value = dateSlot; // Use passed date
             document.getElementById("booking_type").value = activity;
             document.getElementById("booking-overlay").style.display = "flex";
         }
-        
+
         function closeBookingForm() {
             document.getElementById("booking-overlay").style.display = "none";
-            document.getElementById("booking-form").reset();
+            // No need to reset form if values are set dynamically in openBookingForm
+            // document.getElementById("booking-form").reset();
         }
 
-        document.getElementById("booking-form").addEventListener("submit", function (event) {
-            event.preventDefault();
-            let selectedDate = document.getElementById("selected-date").value;
-            const formData = new FormData(this);
-            formData.set("booking_date", selectedDate);
-            fetch("{% url 'api_book' %}", {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": "{{ csrf_token }}",
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(Object.fromEntries(formData))
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                closeBookingForm();
-                location.reload();
-            })
-            .catch(error => console.error("Error:", error));
-        });
+        // Ensure the booking form exists before adding listener
+        const bookingForm = document.getElementById("booking-form");
+        if (bookingForm) {
+            bookingForm.addEventListener("submit", function (event) {
+                event.preventDefault();
+                // Get date from the form field which was populated by openBookingForm
+                const formData = new FormData(this);
+
+                // Convert FormData to JSON object
+                let bookingData = {};
+                formData.forEach((value, key) => bookingData[key] = value);
+
+                // Make sure the date is included correctly
+                // If 'booking_date' isn't being set correctly, uncomment and adjust:
+                // bookingData['booking_date'] = document.getElementById("selected-date-display").value;
+
+                fetch("{% url 'api_book' %}", {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(bookingData) // Send JSON data
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if(data.message.includes("created")) { // Basic check for success
+                         closeBookingForm();
+                         location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    alert("An error occurred during booking.");
+                });
+            });
+        }
+
 
         function toggleActivity(activity) {
             let timetable = document.getElementById("timetable-" + activity);
@@ -156,19 +206,54 @@
         }
 
         function cancelBooking(bookingId, userId) {
+             if (!confirm("Are you sure you want to cancel this booking?")) {
+                return;
+            }
             fetch(`/cancel/${bookingId}/`, {
                 method: "POST",
                 headers: {
-                    "X-CSRFToken": "{{ csrf_token }}",
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
                     "Content-Type": "application/json"
                 }
+                 // No body needed if ID is in URL and request is POST
             })
             .then(response => response.json())
             .then(data => {
                 alert(data.message);
-                location.reload();
+                 if(data.message.includes("cancelled")) { // Basic check for success
+                     location.reload();
+                 }
             })
-            .catch(error => console.error("Error:", error));
+            .catch(error => {
+                 console.error("Error:", error);
+                 alert("An error occurred cancelling the booking.");
+            });
+        }
+
+        // --- Function to Join Competition ---
+        function joinCompetition(competitionId) {
+            if (!confirm("Are you sure you want to join this competition?")) {
+                return;
+            }
+            fetch(`/join-competition/${competitionId}/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                    "Content-Type": "application/json"
+                },
+                // No body needed for this simple join action if ID is in URL
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message); // Show success/error message
+                if(data.success) {
+                    location.reload(); // Reload to see updated participant count/status
+                }
+            })
+            .catch(error => {
+                console.error("Error joining competition:", error);
+                alert("An error occurred while trying to join the competition.");
+            });
         }
     </script>
 

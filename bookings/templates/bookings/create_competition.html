@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Create Competition{% endblock %}
+
+{% block content %}
+    <h2>Create a New Competition</h2>
+
+    {% if form.errors %}
+        <div class="error-message">
+            <p>Please correct the errors below:</p>
+            {{ form.non_field_errors }}
+            <ul>
+                {% for field in form %}
+                    {% if field.errors %}
+                        <li><strong>{{ field.label }}:</strong> {{ field.errors|striptags }}</li>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+     {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Create Competition</button>
+    </form>
+
+    <style>
+        .error-message {
+            color: red;
+            background-color: #ffeeee;
+            border: 1px solid #ffcccc;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .messages .success {
+             color: green;
+             background-color: #e6ffe6;
+             border: 1px solid #ccffcc;
+             padding: 10px;
+             margin-bottom: 15px;
+             border-radius: 4px;
+        }
+        .messages .error { /* Style for error messages from messages framework */
+            color: red;
+            background-color: #ffeeee;
+            border: 1px solid #ffcccc;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+         ul.messages {
+            list-style: none;
+            padding: 0;
+         }
+    </style>
+{% endblock %}

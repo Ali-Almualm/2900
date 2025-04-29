@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings # Recommended for ForeignKey to User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -79,3 +80,48 @@ def create_user_profile(sender, instance, created, **kwargs):
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
     instance.userprofile.save()
+
+class Competition(models.Model):
+    ACTIVITY_CHOICES = Booking.BOOKING_TYPES # Reuse choices from Booking
+
+    activity_type = models.CharField(max_length=50, choices=ACTIVITY_CHOICES)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    max_joiners = models.PositiveIntegerField(default=2) # Sensible default?
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_competitions')
+    created_at = models.DateTimeField(auto_now_add=True)
+    # We need to ensure a competition doesn't overlap with a regular booking or another competition
+    # for the same activity type and time.
+    # A unique constraint helps, but validation in the view/form is crucial.
+    # unique_together might be too restrictive if you allow *different* activities at the same time.
+
+    def __str__(self):
+        return f"Competition: {self.get_activity_type_display()} ({self.start_time.strftime('%Y-%m-%d %H:%M')} - {self.end_time.strftime('%H:%M')})"
+
+    def is_full(self):
+        return self.participants.count() >= self.max_joiners
+
+    def can_join(self, user):
+        # Check if full and if user hasn't already joined
+        return not self.is_full() and not self.participants.filter(user=user).exists()
+
+    class Meta:
+        ordering = ['start_time']
+        verbose_name = "Competition"
+        verbose_name_plural = "Competitions"
+        # Add constraints if needed, e.g., unique for activity, start, end
+        # unique_together = ('activity_type', 'start_time', 'end_time') # Be careful with this
+
+class CompetitionParticipant(models.Model):
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name='participants')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='joined_competitions')
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('competition', 'user') # User can join a competition only once
+        ordering = ['joined_at']
+
+    def __str__(self):
+        return f"{self.user.username} joined {self.competition}"
+
+
