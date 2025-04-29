@@ -50,27 +50,27 @@
               <td>
                   {% if slot.type == "booked" and slot.booked_by_user %}
                       <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel Booking</button>
-                  {% elif slot.type == "competition" %}
-                      {% if user.is_authenticated %}
-                          {% if slot.can_join_competition %}
-                              <button onclick="joinCompetition('{{ slot.competition_id }}')">Join Competition</button>
-                          {% elif slot.is_full %}
-                              <span style="color: orange; font-weight: bold;">Full</span>
-                          {% else %}
-                               <span style="color: gray;">Joined/Creator</span>
-                          {% endif %}
-                      {% else %}
-                           <a href="{% url 'login' %}?next={{ request.path }}%3Fdate={{ selected_date|date:'Y-m-d' }}">Login to Join</a> {# Pass date in next param #}
-                      {% endif %}
-                  {% elif slot.type == "available" %}
-                      {% if user.is_authenticated %}
-                          {# Option 1: Simple Book Button (if not using drag-select) #}
-                          <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
-                          {# Option 2: If using drag select, this button might not be needed here, rely on bookSelectedRange #}
-                      {% else %}
-                          <p><a href="{% url 'login' %}?next={{ request.path }}%3Fdate={{ selected_date|date:'Y-m-d' }}">Log in</a> to book.</p>
-                      {% endif %}
-                  {% else %}
+                    {% elif slot.type == "competition" %}
+                        {% if user.is_authenticated %}
+                            {% if slot.is_creator %}
+                                <span style="color: gray; font-weight: bold;">Creator</span>
+                                {# Optionally add a 'Manage' or 'Delete' button here later #}
+                            {% elif slot.user_joined %}
+                                {# User has joined and is not the creator -> Show Leave button #}
+                                <button onclick="leaveCompetition('{{ slot.competition_id }}')" style="background-color: #dc3545;">Leave Competition</button>
+                            {% elif slot.can_join_competition %}
+                                {# User can join (not creator, not joined, not full) -> Show Join button #}
+                                <button onclick="joinCompetition('{{ slot.competition_id }}')">Join Competition</button>
+                            {% elif slot.is_full %}
+                                {# Competition is full, user hasn't joined #}
+                                <span style="color: orange; font-weight: bold;">Full</span>
+                            {% else %}
+                               {# Edge case - should mean user cannot join for other reasons #}
+                                <span style="color: gray;">Unavailable</span>
+                            {% endif %}
+                        {% else %}
+                            <a href="{% url 'login' %}?next={{ request.path }}">Login to Join/View</a>
+                        {% endif %}                  {% else %}
                       -
                   {% endif %}
               </td>
@@ -352,9 +352,57 @@
             updateBookingFormForRange();
         };
 
-         // Initially hide the range button if not using drag-select by default
-         // document.getElementById('book-selected-range').style.display = 'none';
 
     });
+            // --- Function to Leave Competition ---
+            function leaveCompetition(competitionId) {
+            if (!confirm("Are you sure you want to leave this competition?")) {
+                return;
+            }
+            fetch(`/leave-competition/${competitionId}/`, { // Call the new URL
+                method: "POST", // Using POST as defined in the view
+                headers: {
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    "Content-Type": "application/json"
+                },
+                // No body needed
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message); // Show success/error message
+                if(data.success) {
+                    location.reload(); // Reload to update button and participant count
+                }
+            })
+            .catch(error => {
+                console.error("Error leaving competition:", error);
+                alert("An error occurred while trying to leave the competition.");
+            });
+        }
+        // --- Function to Join Competition ---
+        function joinCompetition(competitionId) {
+            if (!confirm("Are you sure you want to join this competition?")) {
+                return;
+            }
+            fetch(`/join-competition/${competitionId}/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                    "Content-Type": "application/json"
+                },
+                // No body needed for this simple join action if ID is in URL
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message); // Show success/error message
+                if(data.success) {
+                    location.reload(); // Reload to see updated participant count/status
+                }
+            })
+            .catch(error => {
+                console.error("Error joining competition:", error);
+                alert("An error occurred while trying to join the competition.");
+            });
+        }
     </script>
 {% endblock %}

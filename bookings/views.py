@@ -13,7 +13,7 @@ from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatc
 from django.contrib.auth.models import User
 from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm, CompetitionForm
 from django.contrib.auth.decorators import login_required
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 
 @login_required
@@ -79,12 +79,13 @@ def cancel_booking(request, booking_id):
             return JsonResponse({"message": "You are not authorized to cancel this booking." + request.user.username}, status=403)
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
+
 def index(request):
     date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
     selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
     time_slots = []
-    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
+    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
     end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
 
     current = start_time
@@ -406,7 +407,7 @@ def activity_view(request, activity_type):
     date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
     selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=0, minute=0)
+    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
     end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
     time_slots = []
     current = start_time
@@ -452,14 +453,20 @@ def activity_view(request, activity_type):
         ).first()
 
         if competition_entry:
+            user_is_participant = False
+            if request.user.is_authenticated:
+                user_is_participant = competition_entry.participants.filter(user=request.user).exists()
+
             slot_info.update({
                 "status": "Competition",
                 "details": f"Max: {competition_entry.max_joiners}, Joined: {competition_entry.participants.count()}",
                 "type": "competition",
                 "competition_id": competition_entry.id,
                 "is_full": competition_entry.is_full(),
-                 "can_join_competition": request.user.is_authenticated and competition_entry.can_join(request.user),
-                 "name": f"Comp by {competition_entry.creator.username}"
+                "can_join_competition": request.user.is_authenticated and competition_entry.creator != request.user and not user_is_participant and not competition_entry.is_full(),
+                "user_joined": user_is_participant, # <-- ADD THIS FLAG
+                "is_creator": request.user.is_authenticated and competition_entry.creator == request.user, # <-- ADD THIS FLAG
+                "name": f"Comp by {competition_entry.creator.username}"
             })
         else:
             # Check for Bookings if no competition
@@ -757,3 +764,27 @@ def confirm_result_view(request, booking_id):
             return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
     return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=400)
+
+
+@login_required
+@csrf_exempt # Or ensure CSRF token is handled in JS fetch
+@transaction.atomic # Ensures the operation is atomic
+def leave_competition(request, competition_id):
+    if request.method == 'POST': # Using POST for simplicity, DELETE might be semantically better
+        competition = get_object_or_404(Competition, id=competition_id)
+        user = request.user
+
+        # Prevent creator from leaving via this method
+        if competition.creator == user:
+            return JsonResponse({'success': False, 'message': 'Creators cannot leave their own competition this way.'}, status=403)
+
+        # Find the participation record
+        participation = CompetitionParticipant.objects.filter(competition=competition, user=user).first()
+
+        if participation:
+            participation.delete()
+            return JsonResponse({'success': True, 'message': 'You have left the competition.'})
+        else:
+            return JsonResponse({'success': False, 'message': 'You are not currently in this competition.'}, status=404)
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
