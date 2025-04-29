@@ -34,4 +34,6 @@ urlpatterns = [
     path('competitions/create/', views.create_competition, name='create_competition'),
     path('join-competition/<int:competition_id>/', views.join_competition, name='join_competition'),
 
+    path('match-history/', views.match_history_view, name='match_history'),
+    path('confirm-result/<int:booking_id>/', views.confirm_result_view, name='confirm_result'),
 ]

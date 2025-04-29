@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Match History{% endblock %}
+
+{% block content %}
+<h1>Match History</h1>
+
+{% if match_history %}
+    <table class="match-history-table">
+        <thead>
+            <tr>
+                <th>Match ID</th>
+                <th>Opponent</th>
+                <th>Activity</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Your Result</th>
+                <th>Opponent's Result</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for match in match_history %}
+            <tr>
+                <td>{{ match.id }}</td>
+                <td>{{ match.opponent_name }}</td>
+                <td>{{ match.booking_type|title }}</td>
+                <td>{{ match.start_time|date:"M d, Y H:i" }}</td>
+                <td>{{ match.end_time|date:"M d, Y H:i" }}</td>
+                <td>
+                    {% if match.user_id == user.id|stringformat:"s" %}
+                        {% if match.user_result == 'win' %}
+                            Won
+                        {% elif match.user_result == 'loss' %}
+                            Lost
+                        {% else %}
+                            Pending
+                        {% endif %}
+                    {% else %}
+                        {% if match.opponent_result == 'win' %}
+                            Won
+                        {% elif match.opponent_result == 'loss' %}
+                            Lost
+                        {% else %}
+                            Pending
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if match.user_id == user.id|stringformat:"s" %}
+                        {% if match.opponent_result == 'win' %}
+                            Lost
+                        {% elif match.opponent_result == 'loss' %}
+                            Won
+                        {% else %}
+                            Pending
+                        {% endif %}
+                    {% else %}
+                        {% if match.user_result == 'win' %}
+                            Lost
+                        {% elif match.user_result == 'loss' %}
+                            Won
+                        {% else %}
+                            Pending
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if match.user_id == user.id|stringformat:"s" and not match.user_result %}
+                        <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                        <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                    {% elif match.opponent.id == user.id and not match.opponent_result %}
+                        <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                        <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <p>No match history available.</p>
+{% endif %}
+
+<script>
+function confirmResult(matchId, result) {
+    fetch(`/confirm-result/${matchId}/`, {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ result: result })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload(); // Reload the page to reflect the updated results
+    })
+    .catch(error => console.error("Error:", error));
+}
+</script>
+
+<style>
+/* Match History Table */
+.match-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    text-align: left;
+}
+
+.match-history-table th, .match-history-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+
+.match-history-table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+}
+
+.match-history-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.match-history-table tr:hover {
+    background-color: #f1f1f1;
+}
+
+/* Buttons */
+.action-button {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #fff;
+}
+
+.win-button {
+    background-color: #4CAF50; /* Green */
+}
+
+.win-button:hover {
+    background-color: #45a049;
+}
+
+.loss-button {
+    background-color: #f44336; /* Red */
+}
+
+.loss-button:hover {
+    background-color: #e53935;
+}
+
+</style>
+{% endblock %}

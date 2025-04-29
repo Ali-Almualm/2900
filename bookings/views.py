@@ -13,6 +13,8 @@ from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatc
 from django.contrib.auth.models import User
 from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm, CompetitionForm
 from django.contrib.auth.decorators import login_required
+from django.db import models
+from django.db.models import Q
 
 @login_required
 @csrf_exempt
@@ -619,14 +621,22 @@ def respond_to_match_request(request, booking_request_id):
             booking_request = BookingRequestmatch.objects.get(id=booking_request_id, requested_player=request.user)
 
             if action == 'confirm':
-                # Create a new booking automatically
-                Booking.objects.create(
+                # Create a new booking and populate the opponent field
+                booking = Booking.objects.create(
                     user_id=request.user.id,
+                    opponent=booking_request.requester,  # Populate the opponent field
                     name=f"Match between {booking_request.requester.username} and {request.user.username}",
                     start_time=booking_request.start_time,
                     end_time=booking_request.end_time,
                     booking_type=booking_request.activity_type
                 )
+
+                # Remove overlapping match availability timeslots for both users
+                MatchAvailability.objects.filter(
+                    Q(user=request.user) | Q(user=booking_request.requester),
+                    Q(start_time__lt=booking_request.end_time, end_time__gt=booking_request.start_time)
+                ).delete()
+
                 booking_request.is_confirmed = True
                 booking_request.save()
                 return JsonResponse({'success': True, 'message': 'Booking confirmed and created successfully'})
@@ -705,3 +715,45 @@ def join_competition(request, competition_id):
 
     return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
 
+@login_required
+def match_history_view(request):
+    """Display the match history for the logged-in user."""
+    print("user going to matchmaking")
+    match_history = Booking.objects.filter(
+        models.Q(user_id=str(request.user.id)) | models.Q(name__icontains=request.user.username)
+    ).order_by('-start_time')
+
+    return render(request, 'bookings/match_history.html', {
+        'match_history': match_history
+    })
+
+
+@login_required
+@csrf_exempt
+def confirm_result_view(request, booking_id):
+    """Allow players to confirm the result of a match."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            result = data.get('result')  # 'win' or 'loss'
+
+            booking = Booking.objects.get(id=booking_id)
+
+            # Ensure the logged-in user is part of the match
+            if str(request.user.id) != booking.user_id and request.user.username not in booking.name:
+                return JsonResponse({'success': False, 'message': 'You are not part of this match.'}, status=403)
+
+            # Update the result for the logged-in user
+            if str(request.user.id) == booking.user_id:
+                booking.user_result = result
+            elif request.user.username in booking.name:
+                booking.opponent_result = result
+
+            booking.save()
+            return JsonResponse({'success': True, 'message': 'Result confirmed successfully.'})
+        except Booking.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Match not found.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=400)
