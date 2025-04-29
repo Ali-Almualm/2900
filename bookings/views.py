@@ -603,15 +603,18 @@ def respond_to_match_request(request, booking_request_id):
 @login_required
 def match_history_view(request):
     """Display the match history for the logged-in user."""
-    print("user going to matchmaking")
     match_history = Booking.objects.filter(
-        models.Q(user_id=str(request.user.id)) | models.Q(name__icontains=request.user.username)
+        models.Q(user_id=str(request.user.id)) | models.Q(opponent=request.user)
     ).order_by('-start_time')
+
+    # Debugging: Print match history to the console
+    print("Match History Queryset:")
+    for match in match_history:
+        print(f"Match ID: {match.id}, User ID: {match.user_id}, Opponent: {match.opponent}, User Result: {match.user_result}, Opponent Result: {match.opponent_result}")
 
     return render(request, 'bookings/match_history.html', {
         'match_history': match_history
     })
-
 
 @login_required
 @csrf_exempt
@@ -622,20 +625,23 @@ def confirm_result_view(request, booking_id):
             data = json.loads(request.body)
             result = data.get('result')  # 'win' or 'loss'
 
+            # Fetch the booking
             booking = Booking.objects.get(id=booking_id)
 
             # Ensure the logged-in user is part of the match
-            if str(request.user.id) != booking.user_id and request.user.username not in booking.name:
+            if str(request.user.id) == booking.user_id:
+                # Update the user's result
+                booking.user_result = result
+            elif request.user == booking.opponent:
+                # Update the opponent's result
+                booking.opponent_result = result
+            else:
                 return JsonResponse({'success': False, 'message': 'You are not part of this match.'}, status=403)
 
-            # Update the result for the logged-in user
-            if str(request.user.id) == booking.user_id:
-                booking.user_result = result
-            elif request.user.username in booking.name:
-                booking.opponent_result = result
-
+            # Save the updated booking
             booking.save()
-            return JsonResponse({'success': True, 'message': 'Result confirmed successfully.'})
+
+            return JsonResponse({'success': True, 'message': 'Result updated successfully.'})
         except Booking.DoesNotExist:
             return JsonResponse({'success': False, 'message': 'Match not found.'}, status=404)
         except Exception as e:
