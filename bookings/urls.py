@@ -31,4 +31,6 @@ urlpatterns = [
     path('matches/<str:activity_type>/', views.find_matches, name='find_matches'),
     path('create-match-request/', views.create_match_request, name='create_match_request'),
     path('respond-to-match-request/<int:booking_request_id>/', views.respond_to_match_request, name='respond_to_match_request'),
+    path('match-history/', views.match_history_view, name='match_history'),
+    path('confirm-result/<int:booking_id>/', views.confirm_result_view, name='confirm_result'),
 ]

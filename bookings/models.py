@@ -37,8 +37,9 @@ class BookingRequestmatch(models.Model):
     end_time = models.DateTimeField()
     is_confirmed = models.BooleanField(default=False)
     is_rejected = models.BooleanField(default=False)
+    is_completed = models.BooleanField(default=False)  # New field to track match completion
     created_at = models.DateTimeField(auto_now_add=True)
-    requester_skill = models.IntegerField(null=True, blank=True)  # Add this field
+    requester_skill = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.requester.username} -> {self.requested_player.username} ({self.start_time} - {self.end_time})"
@@ -50,11 +51,36 @@ class Booking(models.Model):
     ]
 
     user_id = models.CharField(max_length=50)  # Matches the MySQL schema
+    opponent = models.ForeignKey(User, on_delete=models.CASCADE, related_name='opponent_bookings', null=True, blank=True)
     name = models.CharField(max_length=100)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     booking_type = models.CharField(max_length=50, choices=BOOKING_TYPES)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    user_result = models.CharField(max_length=10, null=True, blank=True, choices=[
+        ('win', 'Win'),
+        ('loss', 'Loss'),
+        ('pending', 'Pending'),
+    ])
+    opponent_result = models.CharField(max_length=10, null=True, blank=True, choices=[
+        ('win', 'Win'),
+        ('loss', 'Loss'),
+        ('pending', 'Pending'),
+    ])
+
+
+    def is_match_completed(self):
+        """Check if both players have confirmed the result."""
+        return self.user_result is not None and self.opponent_result is not None
+
+    def get_match_winner(self):
+        """Determine the winner of the match."""
+        if self.user_result == 'win' and self.opponent_result == 'loss':
+            return self.user_id
+        elif self.user_result == 'loss' and self.opponent_result == 'win':
+            return self.opponent_id
+        return None  # Match is not yet resolved
 
     class Meta:
         db_table = "bookings"  # Ensures Django uses the correct table name
