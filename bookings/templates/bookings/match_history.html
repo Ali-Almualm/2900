@@ -5,30 +5,60 @@
 {% block content %}
 <h1>Match History</h1>
 
+<!-- Debugging Information -->
+<div>
+    <h3>Debugging Information</h3>
+    <p>Logged-in User ID: {{ user.id }}</p>
+    <p>Logged-in Username: {{ user.username }}</p>
+</div>
+
 {% if match_history %}
     <table class="match-history-table">
         <thead>
             <tr>
                 <th>Match ID</th>
-                <th>Opponent</th>
+                <th>Match Name</th>
                 <th>Activity</th>
                 <th>Start Time</th>
                 <th>End Time</th>
+                <th>Match Creator</th>
+                <th>Opponent</th>
+                <th>Your Role</th> <!-- New column for role -->
                 <th>Your Result</th>
                 <th>Opponent's Result</th>
                 <th>Action</th>
+                <th>Debug Info</th>
             </tr>
         </thead>
         <tbody>
             {% for match in match_history %}
             <tr>
                 <td>{{ match.id }}</td>
-                <td>{{ match.opponent_name }}</td>
+                <td>{{ match.name }}</td>
                 <td>{{ match.booking_type|title }}</td>
                 <td>{{ match.start_time|date:"M d, Y H:i" }}</td>
                 <td>{{ match.end_time|date:"M d, Y H:i" }}</td>
+                <td>{{ match.user_id }}</td> <!-- Match creator's user_id -->
+                <td>
+                    {% if match.opponent %}
+                        {{ match.opponent.username }}
+                    {% else %}
+                        No opponent
+                    {% endif %}
+                </td>
+                <td>
+                    <!-- Determine the role of the logged-in user -->
+                    {% if match.user_id == user.id|stringformat:"s" %}
+                        Match Creator
+                    {% elif match.opponent and match.opponent.id == user.id %}
+                        Opponent
+                    {% else %}
+                        Unknown
+                    {% endif %}
+                </td>
                 <td>
                     {% if match.user_id == user.id|stringformat:"s" %}
+                        <!-- Your Result as Match Creator -->
                         {% if match.user_result == 'win' %}
                             Won
                         {% elif match.user_result == 'loss' %}
@@ -36,7 +66,8 @@
                         {% else %}
                             Pending
                         {% endif %}
-                    {% else %}
+                    {% elif match.opponent and match.opponent.id == user.id %}
+                        <!-- Your Result as Opponent -->
                         {% if match.opponent_result == 'win' %}
                             Won
                         {% elif match.opponent_result == 'loss' %}
@@ -48,18 +79,20 @@
                 </td>
                 <td>
                     {% if match.user_id == user.id|stringformat:"s" %}
+                        <!-- Opponent's Result as Match Creator -->
                         {% if match.opponent_result == 'win' %}
-                            Lost
-                        {% elif match.opponent_result == 'loss' %}
                             Won
+                        {% elif match.opponent_result == 'loss' %}
+                            Lost
                         {% else %}
                             Pending
                         {% endif %}
-                    {% else %}
+                    {% elif match.opponent and match.opponent.id == user.id %}
+                        <!-- Opponent's Result as Opponent -->
                         {% if match.user_result == 'win' %}
-                            Lost
-                        {% elif match.user_result == 'loss' %}
                             Won
+                        {% elif match.user_result == 'loss' %}
+                            Lost
                         {% else %}
                             Pending
                         {% endif %}
@@ -69,10 +102,17 @@
                     {% if match.user_id == user.id|stringformat:"s" and not match.user_result %}
                         <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
                         <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
-                    {% elif match.opponent.id == user.id and not match.opponent_result %}
+                    {% elif match.opponent and match.opponent.id == user.id and not match.opponent_result %}
                         <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
                         <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
                     {% endif %}
+                </td>
+                <td>
+                    <!-- Debugging Information for Each Match -->
+                    <p>Match Creator ID: {{ match.user_id }}</p>
+                    <p>Opponent ID: {% if match.opponent %}{{ match.opponent.id }}{% else %}No opponent{% endif %}</p>
+                    <p>User Result: {{ match.user_result }}</p>
+                    <p>Opponent Result: {{ match.opponent_result }}</p>
                 </td>
             </tr>
             {% endfor %}
@@ -154,6 +194,5 @@ function confirmResult(matchId, result) {
 .loss-button:hover {
     background-color: #e53935;
 }
-
 </style>
 {% endblock %}
