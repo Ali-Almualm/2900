@@ -3,15 +3,20 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout, login, authenticate
 import json
+from django.forms import modelformset_factory # Import formset factory
+
 from django.http import JsonResponse
 from datetime import datetime, timedelta, date
 from django.contrib import messages
 from django.urls import reverse # For redirects
 
 from .models import Booking, UserProfile, MatchAvailability , BookingRequestmatch, Competition, CompetitionParticipant
+from .models import CompetitionMatch, MatchParticipant, User
+from django.views.decorators.http import require_POST # <--- ADD THIS LINE
+
 #  SE HER!!!!!!! MATCH
 from django.contrib.auth.models import User
-from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm, CompetitionForm
+from .forms import BookingForm, registrationform, loginform, MatchAvailabilityForm, CompetitionForm, CompetitionMatch, CompetitionMatchForm, MatchParticipantForm, MatchResultForm 
 from django.contrib.auth.decorators import login_required
 from django.db import models, transaction
 from django.db.models import Q
@@ -794,3 +799,407 @@ def leave_competition(request, competition_id):
             return JsonResponse({'success': False, 'message': 'You are not currently in this competition.'}, status=404)
 
     return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
+
+@login_required
+@require_POST # Ensures this view only accepts POST requests
+def complete_competition(request, competition_id):
+    """Allows the competition creator to mark it as completed."""
+    competition = get_object_or_404(Competition, id=competition_id)
+
+    # Permission Check: Only the creator can complete it
+    if request.user != competition.creator:
+        messages.error(request, "You are not authorized to end this competition.")
+        # Redirect somewhere appropriate, maybe the competition detail page if it exists, or index
+        # If you create competition_detail view later, redirect there:
+        # return redirect('competition_detail', competition_id=competition.id)
+        return redirect('index') # Fallback redirect
+
+    # Update status
+    competition.status = 'completed'
+    competition.save()
+
+    messages.success(request, f"Competition '{competition}' marked as completed.")
+
+    # Redirect back to the competition detail page or the activity page
+    # activity_url = reverse(competition.activity_type) # e.g., reverse('pool')
+    # return redirect(f"{activity_url}?date={competition.start_time.strftime('%Y-%m-%d')}")
+    # Or redirect to competition detail page if you have one:
+    # return redirect('competition_detail', competition_id=competition.id)
+    return redirect('index') # Fallback redirect for now
+
+
+@login_required
+def competition_detail(request, competition_id):
+    """Displays details for a specific competition."""
+    competition = get_object_or_404(Competition, id=competition_id)
+    participants = CompetitionParticipant.objects.filter(competition=competition).select_related('user')
+    matches = CompetitionMatch.objects.filter(competition=competition).prefetch_related('participants__user') # Fetch matches
+
+    is_creator = (request.user == competition.creator)
+
+    context = {
+        'competition': competition,
+        'participants': participants,
+        'matches': matches,
+        'is_creator': is_creator,
+    }
+    # We will create this template in the next step
+    return render(request, 'bookings/competition_detail.html', context)
+
+@login_required
+def add_competition_match(request, competition_id):
+    """Allows the competition creator to add a new match shell."""
+    competition = get_object_or_404(Competition, id=competition_id)
+
+    # --- Permission Checks ---
+    if request.user != competition.creator:
+        messages.error(request, "You are not authorized to add matches to this competition.")
+        return redirect('competition_detail', competition_id=competition.id)
+
+    if competition.status == 'completed':
+        messages.warning(request, "Cannot add matches to a completed competition.")
+        return redirect('competition_detail', competition_id=competition.id)
+    # --- End Permission Checks ---
+
+    if request.method == 'POST':
+        # Pass the competition object to the form if needed for validation
+        form = CompetitionMatchForm(request.POST, competition=competition)
+        if form.is_valid():
+            match = form.save(commit=False)
+            match.competition = competition # Link the match to the competition
+            match.status = 'pending' # Matches start as pending
+            match.save()
+            messages.success(request, f"Match ({match.get_match_type_display()}) created successfully. Now add participants.")
+            # Redirect back to the detail page where the new match will be listed
+            # Consider redirecting to a participant assignment page later:
+            # return redirect('assign_match_participants', match_id=match.id)
+            return redirect('competition_detail', competition_id=competition.id)
+        else:
+            # Form is invalid, errors will be displayed by the template rendering below
+            messages.error(request, "Please correct the errors below.")
+    else: # GET request
+        form = CompetitionMatchForm(competition=competition) # Pass competition for potential validation
+
+    context = {
+        'form': form,
+        'competition': competition,
+    }
+    return render(request, 'bookings/add_competition_match.html', context)
+
+@login_required
+def assign_match_participants(request, match_id):
+    """Assign/Manage participants for a specific competition match."""
+    match = get_object_or_404(CompetitionMatch, id=match_id)
+    competition = match.competition
+
+    # --- Permission Checks ---
+    if request.user != competition.creator:
+        messages.error(request, "You are not authorized to manage participants for this match.")
+        return redirect('competition_detail', competition_id=competition.id)
+
+    if competition.status == 'completed':
+        messages.warning(request, "Cannot manage participants for a completed competition.")
+        return redirect('competition_detail', competition_id=competition.id)
+    # --- End Permission Checks ---
+
+    # Get users who joined the competition
+    competition_participants = CompetitionParticipant.objects.filter(competition=competition)
+    eligible_user_ids = competition_participants.values_list('user_id', flat=True)
+    eligible_users = User.objects.filter(id__in=eligible_user_ids).order_by('username')
+
+    # --- Determine expected number of participants ---
+    if match.match_type == '1v1':
+        num_participants_expected = 2
+    elif match.match_type == '2v2':
+        num_participants_expected = 4
+    else: # FFA - Handle differently? For now, let's allow adding many.
+        # We might need an "Add Player" button & JS for true FFA flexibility
+        # Let's set a max for now or allow creator to manage extras
+        num_participants_expected = competition.participants.count() # Default to max possible? Or a smaller number? Let's start flexible.
+        # Or set extra=1 to add one at a time? For now, let's manage existing + maybe 1 extra.
+
+    # --- Create the Formset ---
+    # We manage existing participants + allow adding up to the expected number
+    MatchParticipantFormSet = modelformset_factory(
+        MatchParticipant,
+        form=MatchParticipantForm, # Use our custom form
+        fields=('user', 'team'),
+        extra=0, # Start with 0 extra forms, we might add dynamically if needed or adjust 'initial'
+        can_delete=True # Allow deleting participants from the match
+    )
+
+    # Limit user choices in the formset's forms
+    formset_kwargs = {
+        'form_kwargs': {
+            'eligible_users': eligible_users,
+            'match_type': match.match_type
+        }
+    }
+
+    if request.method == 'POST':
+        formset = MatchParticipantFormSet(request.POST, queryset=MatchParticipant.objects.filter(match=match), **formset_kwargs)
+
+        if formset.is_valid():
+            try:
+                with transaction.atomic(): # Ensure all or nothing saves
+                    participants = formset.save(commit=False)
+                    users_in_formset = set()
+                    valid_count = 0
+
+                    for participant in formset.cleaned_data:
+                         # Check if the form is marked for deletion
+                        if participant.get('DELETE', False):
+                            # If instance exists, delete it (formset handles this if commit=True)
+                            if participant.get('id'):
+                                 participant.get('id').delete()
+                            continue # Skip further processing for deleted forms
+
+                        # Check if it's an empty form (can happen with extra forms)
+                        if not participant or not participant.get('user'):
+                            continue
+
+                        # Check for duplicate users within the submission
+                        user = participant.get('user')
+                        if user in users_in_formset:
+                             raise forms.ValidationError(f"Cannot add the same user '{user.username}' multiple times to the same match.")
+                        users_in_formset.add(user)
+
+                        # Check if user is eligible
+                        if user.id not in eligible_user_ids:
+                             raise forms.ValidationError(f"User '{user.username}' is not registered for this competition.")
+
+                        # Assign match (if creating new)
+                        instance = participant.get('id') # Existing instance or None
+                        if instance is None: # Creating new
+                            new_participant = MatchParticipant(
+                                match=match,
+                                user=user,
+                                team=participant.get('team')
+                             )
+                            new_participant.save()
+                        else: # Updating existing
+                             instance.user = user
+                             instance.team = participant.get('team')
+                             instance.save()
+                        valid_count +=1
+
+
+                    # Final validation based on match type (after processing all forms)
+                    if match.match_type in ['1v1', '2v2'] and valid_count != num_participants_expected:
+                         raise forms.ValidationError(f"Incorrect number of participants for a {match.get_match_type_display()} match. Expected {num_participants_expected}, got {valid_count}.")
+                    # Add validation for 2v2 teams if needed (e.g., ensure teams A and B exist)
+
+                messages.success(request, "Match participants updated successfully.")
+                return redirect('competition_detail', competition_id=competition.id)
+
+            except forms.ValidationError as e:
+                 # Add non-form errors to be displayed
+                 formset.non_form_errors().append(e)
+                 messages.error(request, f"Please correct the errors: {e}")
+
+            except Exception as e:
+                 # Catch other potential errors during save
+                 messages.error(request, f"An unexpected error occurred: {e}")
+                 # You might want to add more specific error handling or logging
+                 formset.non_form_errors().append(f"An unexpected error occurred: {e}")
+
+        else: # Formset is invalid
+             messages.error(request, "Please correct the errors in the form(s) below.")
+
+    else: # GET request
+        # Queryset for existing participants
+        queryset = MatchParticipant.objects.filter(match=match)
+        # Calculate how many extra forms might be needed
+        current_participants = queryset.count()
+
+        # For fixed types (1v1, 2v2), set extra to reach the target number
+        if match.match_type in ['1v1', '2v2']:
+            extra_forms = max(0, num_participants_expected - current_participants)
+        else: # FFA - Maybe just allow adding one at a time?
+            extra_forms = 1 # Allow adding one more participant
+
+        # Recreate factory with calculated extra forms
+        MatchParticipantFormSet = modelformset_factory(
+            MatchParticipant,
+            form=MatchParticipantForm,
+            fields=('user', 'team'),
+            extra=extra_forms,
+            can_delete=True
+        )
+        formset = MatchParticipantFormSet(queryset=queryset, **formset_kwargs)
+
+    context = {
+        'formset': formset,
+        'match': match,
+        'competition': competition,
+        'match_type': match.match_type, # Pass match_type for template logic
+        'eligible_users_count': eligible_users.count() # For display/info
+    }
+    return render(request, 'bookings/assign_match_participants.html', context)
+
+@login_required
+def enter_match_results(request, match_id):
+    """Allows the competition creator to enter results for a specific match."""
+    match = get_object_or_404(CompetitionMatch.objects.select_related('competition'), id=match_id)
+    competition = match.competition
+
+    # --- Permission Checks ---
+    if request.user != competition.creator:
+        messages.error(request, "You are not authorized to enter results for this match.")
+        return redirect('competition_detail', competition_id=competition.id)
+
+    if competition.status == 'completed':
+        messages.warning(request, "Cannot enter results for a completed competition.")
+        return redirect('competition_detail', competition_id=competition.id)
+
+    if match.status == 'completed':
+         messages.warning(request, "Results have already been recorded for this match.")
+         # Allow editing? For now, let's redirect.
+         # return redirect('competition_detail', competition_id=competition.id)
+         pass # Allow viewing/editing for now
+
+    if not match.participants.exists():
+        messages.error(request, "Participants must be assigned before entering results.")
+        # Redirect to assign participants page instead of detail page
+        return redirect('assign_match_participants', match_id=match.id)
+    # --- End Permission Checks ---
+
+    # Use modelformset_factory to edit existing MatchParticipant results
+    MatchResultFormSet = modelformset_factory(
+        MatchParticipant,
+        form=MatchResultForm,
+        fields=('result_simple', 'result_rank_score'), # Fields editable via the custom form logic
+        extra=0 # Don't allow adding new participants here
+    )
+
+    # Pass match_type to the forms within the formset
+    formset_kwargs = {'form_kwargs': {'match_type': match.match_type}}
+
+    if request.method == 'POST':
+        # Provide the queryset for validation/saving existing instances
+        formset = MatchResultFormSet(request.POST, queryset=match.participants.all().select_related('user'), **formset_kwargs)
+
+        if formset.is_valid():
+            try:
+                with transaction.atomic():
+                    participants_data = {}
+                    ranks_entered = set()
+                    teams_results = {} # For 2v2 validation
+
+                    # Save instances first to get access to cleaned_data AND instance
+                    instances = formset.save(commit=False)
+
+                    for form in formset: # Iterate through forms to access cleaned_data AND instance
+                        if form.is_valid() and form.has_changed(): # Process only valid and changed forms
+                            instance = form.instance # The participant being edited
+                            result_simple = form.cleaned_data.get('result_simple')
+                            result_rank_score = form.cleaned_data.get('result_rank_score')
+
+                            # Store data for cross-form validation
+                            participants_data[instance.id] = {
+                                'instance': instance,
+                                'simple': result_simple,
+                                'rank_score': result_rank_score,
+                                'team': instance.team
+                            }
+
+                            # --- Update instance based on match type ---
+                            if match.match_type == 'ffa':
+                                if result_rank_score is None or result_rank_score < 1:
+                                    # Add error to the specific form field
+                                    form.add_error('result_rank_score', f"Invalid rank/score entered for {instance.user.username}.")
+                                    raise forms.ValidationError("Invalid rank/score entered.") # Raise to break transaction
+
+                                if result_rank_score in ranks_entered:
+                                     form.add_error('result_rank_score', f"Duplicate rank/score '{result_rank_score}' entered.")
+                                     raise forms.ValidationError("Duplicate rank/score entered.")
+                                ranks_entered.add(result_rank_score)
+
+                                instance.result_type = 'rank' # Or 'score' based on config
+                                instance.result_value = result_rank_score
+                                instance.save() # Save individual instance
+
+                            elif match.match_type in ['1v1', '2v2']:
+                                if not result_simple or result_simple == 'pending':
+                                     form.add_error('result_simple', f"Please select a result (Win/Loss/Draw) for {instance.user.username}.")
+                                     raise forms.ValidationError("Result not selected.")
+
+                                instance.result_type = result_simple
+                                instance.result_value = None # Clear rank/score value
+                                instance.save() # Save individual instance
+
+                                if match.match_type == '2v2':
+                                     team = instance.team
+                                     if not team:
+                                          form.add_error(None, "Team missing for 2v2 match.") # Non-field error maybe?
+                                          raise forms.ValidationError("Team missing for 2v2.")
+                                     if team not in teams_results: teams_results[team] = set()
+                                     teams_results[team].add(result_simple)
+                            # Removed else block, only save valid instances
+
+                    # --- Post-loop Validation ---
+                    if match.match_type == '1v1':
+                        results = [p['simple'] for p in participants_data.values()]
+                        if len(results) != 2: # Ensure exactly 2 results were processed
+                             raise forms.ValidationError("Incorrect number of results processed for 1v1.")
+                        if not ( (results.count('win') == 1 and results.count('loss') == 1) or \
+                                 (results.count('draw') == 2) ):
+                            raise forms.ValidationError("Invalid combination of results for 1v1. Must be one Win/one Loss, or two Draws.")
+
+                    elif match.match_type == '2v2':
+                         if len(participants_data) != 4: # Ensure exactly 4 results processed
+                              raise forms.ValidationError("Incorrect number of results processed for 2v2.")
+                         if len(teams_results) != 2: raise forms.ValidationError("Expected results for two teams in 2v2.")
+
+                         team_results_list = list(teams_results.values())
+                         # Check all players in a team have the same result
+                         if not all(len(res) == 1 for res in team_results_list):
+                              raise forms.ValidationError("All players in the same team must have the same result (Win, Loss, or Draw).")
+                         # Check team results are consistent (W/L or D/D)
+                         team_results_flat = [list(res)[0] for res in team_results_list]
+                         if not ( ('win' in team_results_flat and 'loss' in team_results_flat) or \
+                                  (team_results_flat.count('draw') == 2) ):
+                             raise forms.ValidationError("Invalid team results combination for 2v2. Must be one team Win/one team Loss, or both teams Draw.")
+                    elif match.match_type == 'ffa':
+                        # Ensure all participants have a rank if FFA validation passes loop
+                         if len(participants_data) != match.participants.count():
+                              raise forms.ValidationError("Not all participants have results entered for FFA.")
+                         # Ensure ranks are consecutive starting from 1? (Optional)
+                         # sorted_ranks = sorted(list(ranks_entered))
+                         # if sorted_ranks != list(range(1, len(sorted_ranks) + 1)):
+                         #     raise forms.ValidationError("Ranks must be consecutive positive integers starting from 1.")
+
+
+                    # If all validation passes, mark match as completed
+                    match.status = 'completed'
+                    match.save()
+
+                # Success outside the transaction block
+                messages.success(request, "Match results saved successfully.")
+                return redirect('competition_detail', competition_id=competition.id)
+
+            except forms.ValidationError as e:
+                # Add validation errors raised within transaction to non_form_errors
+                # Note: errors added directly to fields using form.add_error will show automatically
+                formset.non_form_errors().append(e)
+                messages.error(request, f"Please correct the errors: {e}")
+
+            except Exception as e:
+                messages.error(request, f"An unexpected error occurred: {e}")
+                # Add error to non_form_errors for visibility
+                formset.non_form_errors().append(f"An unexpected error occurred: {e}")
+                # Consider logging the full traceback here for debugging
+
+        else: # Formset is invalid (individual form validation failed)
+             messages.error(request, "Please correct the errors in the form(s) below.")
+
+    else: # GET request
+        # Prepare initial data for the formset if needed (e.g., based on existing results)
+        formset = MatchResultFormSet(queryset=match.participants.all().select_related('user'), **formset_kwargs)
+
+    context = {
+        'formset': formset,
+        'match': match,
+        'competition': competition,
+    }
+    return render(request, 'bookings/enter_match_results.html', context)

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Competition Details: {{ competition }}{% endblock %}
+
+{% block content %}
+    <h1>Competition Details</h1>
+
+    {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <div class="competition-info">
+        <h2>{{ competition.get_activity_type_display }} Competition</h2>
+        <p><strong>Status:</strong> <span class="status-{{ competition.status }}">{{ competition.get_status_display }}</span></p>
+        <p><strong>Creator:</strong> {{ competition.creator.username }}</p>
+        <p><strong>Time:</strong> {{ competition.start_time|date:"M d, Y H:i" }} to {{ competition.end_time|date:"M d, Y H:i" }}</p>
+        <p><strong>Participants:</strong> {{ participants.count }} / {{ competition.max_joiners }}</p>
+        <p><strong>Created At:</strong> {{ competition.created_at|date:"M d, Y H:i" }}</p>
+    </div>
+
+    <hr>
+
+    <div class="participants-list">
+        <h3>Participants</h3>
+        {% if participants %}
+            <ul>
+                {% for p in participants %}
+                    <li>{{ p.user.username }} {% if p.user == competition.creator %}(Creator){% endif %}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No participants have joined yet (except the creator).</p>
+        {% endif %}
+    </div>
+
+    <hr>
+
+    <div class="matches-list">
+        <h3>Matches</h3>
+        {% if matches %}
+        <table class="match-history-table">
+            <thead>
+                <tr>
+                    <th>Match ID</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Players/Teams</th>
+                    <th>Action</th> {# Keep the existing Action column #}
+                    <th>Management</th> {# Add a new column for management links #}
+                </tr>
+            </thead>
+            <tbody>
+            {% for match in matches %}
+                <tr>
+                    <td>{{ match.id }}</td>
+                    <td>{{ match.get_match_type_display }}</td>
+                    <td>{{ match.get_status_display }}</td>
+                    <td>
+                        {# Display participants nicely based on type later #}
+                        {% for mp in match.participants.all %}
+                            {{ mp.user.username }}{% if mp.team %} (Team {{ mp.team }}){% endif %}{% if not forloop.last %}, {% endif %}
+                        {% empty %}
+                            <span style="color:orange;">Participants not assigned</span>
+                        {% endfor %}
+                    </td>
+                    <td> {# Existing Action column for results #}
+                        {% if is_creator and match.status != 'completed' and competition.status != 'completed' and match.participants.exists %} {# Only allow results if participants exist #}
+                            <a href="{% url 'enter_match_results' match_id=match.id %}" class="button button-small">Enter Results</a>
+                            <span style="color: gray;">(Enter Results - TBD)</span>
+                        {% elif match.status == 'completed' %}
+                            <span class="status-completed">Results Recorded</span>
+                        {% elif not match.participants.exists and is_creator %}
+                             <span style="color: gray;">Assign participants first</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td> {# New Management column #}
+                        {% if is_creator and competition.status != 'completed' %}
+                         <a href="{% url 'assign_match_participants' match_id=match.id %}" class="button button-small button-secondary">
+                             {% if match.participants.exists %}Manage{% else %}Assign{% endif %} Participants
+                         </a>
+                        {% else %}
+                         -
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+                {% else %}
+            <p>No matches have been created for this competition yet.</p>
+        {% endif %}
+    </div>
+
+    <hr>
+
+    {% if is_creator %}
+        <div class="creator-actions">
+            <h3>Creator Actions</h3>
+
+            {% if competition.status != 'completed' %}
+                <a href="{% url 'add_competition_match' competition_id=competition.id %}" class="button">Add Match</a>
+
+                <form action="{% url 'complete_competition' competition.id %}" method="post" style="display: inline; margin-left: 10px;">
+                    {% csrf_token %}
+                    <button type="submit" class="button-danger" onclick="return confirm('Are you sure you want to mark this competition as completed? Results cannot be changed after this.');">End Competition</button>
+                </form>
+            {% else %}
+                <p>This competition has been completed.</p>
+            {% endif %}
+
+        </div>
+    {% endif %}
+
+    <style>
+        .competition-info, .participants-list, .matches-list, .creator-actions {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 5px;
+        }
+        .status-scheduled { color: #ffc107; font-weight: bold; } /* Amber */
+        .status-ongoing { color: #28a745; font-weight: bold; } /* Green */
+        .status-completed { color: #007bff; font-weight: bold; } /* Blue */
+        .status-cancelled { color: #dc3545; font-weight: bold; } /* Red */
+        .button-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .button-danger:hover {
+            background-color: #c82333;
+        }
+         .button-small {
+             padding: 4px 8px;
+             font-size: 0.9em;
+         }
+         /* Style for success/error messages */
+         ul.messages { list-style: none; padding: 0; margin-bottom: 15px; }
+         .messages li { padding: 10px; border-radius: 4px; margin-bottom: 5px; }
+         .messages li.success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+         .messages li.error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+    </style>
+    {# Add button-secondary style if not already present #}
+    <style>
+        .button-secondary { background-color: #6c757d; color: white; }
+        .button-secondary:hover { background-color: #5a6268; }
+        .button-small { padding: 4px 8px; font-size: 0.9em; }
+    </style>
+
+{% endblock %}

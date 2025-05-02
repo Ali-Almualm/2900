@@ -48,33 +48,37 @@
 
               {# Updated Action Cell #}
               <td>
-                  {% if slot.type == "booked" and slot.booked_by_user %}
-                      <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel Booking</button>
-                    {% elif slot.type == "competition" %}
-                        {% if user.is_authenticated %}
-                            {% if slot.is_creator %}
-                                <span style="color: gray; font-weight: bold;">Creator</span>
-                                {# Optionally add a 'Manage' or 'Delete' button here later #}
-                            {% elif slot.user_joined %}
-                                {# User has joined and is not the creator -> Show Leave button #}
-                                <button onclick="leaveCompetition('{{ slot.competition_id }}')" style="background-color: #dc3545;">Leave Competition</button>
-                            {% elif slot.can_join_competition %}
-                                {# User can join (not creator, not joined, not full) -> Show Join button #}
-                                <button onclick="joinCompetition('{{ slot.competition_id }}')">Join Competition</button>
-                            {% elif slot.is_full %}
-                                {# Competition is full, user hasn't joined #}
-                                <span style="color: orange; font-weight: bold;">Full</span>
-                            {% else %}
-                               {# Edge case - should mean user cannot join for other reasons #}
-                                <span style="color: gray;">Unavailable</span>
-                            {% endif %}
-                        {% else %}
-                            <a href="{% url 'login' %}?next={{ request.path }}">Login to Join/View</a>
-                        {% endif %}                  {% else %}
-                      -
-                  {% endif %}
-              </td>
-          </tr>
+                {# --- Existing logic for booked slots --- #}
+                {% if slot.type == "booked" and slot.booked_by_user %}
+                    <button onclick="cancelBooking('{{ slot.booking_id }}')">Cancel Booking</button>
+            
+                {# --- Modify the Competition Logic --- #}
+                {% elif slot.type == "competition" %}
+                    {# Add the Details Link/Button FIRST #}
+                    <a href="{% url 'competition_detail' competition_id=slot.competition_id %}" class="button button-small button-info">Details</a> {# <--- ADD THIS LINK #}
+            
+                    {# Keep existing join/leave/status logic below the details button #}
+                    {% if user.is_authenticated %}
+                         {% if slot.is_creator %}
+                             <span style="color: gray; font-weight: bold; margin-left: 5px;">Creator</span>
+                         {% elif slot.user_joined %}
+                             <button onclick="leaveCompetition('{{ slot.competition_id }}')" style="background-color: #dc3545; margin-left: 5px;">Leave Competition</button>
+                         {% elif slot.can_join_competition %}
+                             <button onclick="joinCompetition('{{ slot.competition_id }}')" style="margin-left: 5px;">Join Competition</button>
+                         {% elif slot.is_full %}
+                             <span style="color: orange; font-weight: bold; margin-left: 5px;">Full</span>
+                         {% else %}
+                             <span style="color: gray; margin-left: 5px;">Unavailable</span>
+                         {% endif %}
+                     {% else %}
+                         <span style="margin-left: 5px;"><a href="{% url 'login' %}?next={{ request.path }}">Login to Join/View</a></span>
+                     {% endif %}
+            
+                {# --- Handle other slot types (e.g., available - depends if you merged index/activity logic) --- #}
+                {% else %}
+                   -
+                {% endif %}
+            </td>          </tr>
           {% endfor %}
       </tbody>
     </table>

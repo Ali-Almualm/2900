@@ -109,6 +109,12 @@ def save_user_profile(sender, instance, **kwargs):
 
 class Competition(models.Model):
     ACTIVITY_CHOICES = Booking.BOOKING_TYPES # Reuse choices from Booking
+    STATUS_CHOICES = [
+        ('scheduled', 'Scheduled'), # Before start time
+        ('ongoing', 'Ongoing'),   # After start time, before manual end
+        ('completed', 'Completed'), # Manually marked as ended by creator
+        ('cancelled', 'Cancelled'), # Optional: If needed
+    ]
 
     activity_type = models.CharField(max_length=50, choices=ACTIVITY_CHOICES)
     start_time = models.DateTimeField()
@@ -116,6 +122,8 @@ class Competition(models.Model):
     max_joiners = models.PositiveIntegerField(default=2) # Sensible default?
     creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_competitions')
     created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='scheduled') # New status field
+
     # We need to ensure a competition doesn't overlap with a regular booking or another competition
     # for the same activity type and time.
     # A unique constraint helps, but validation in the view/form is crucial.
@@ -149,5 +157,70 @@ class CompetitionParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user.username} joined {self.competition}"
+
+
+class CompetitionMatch(models.Model):
+    """Represents a single match or game within a competition."""
+    MATCH_TYPE_CHOICES = [
+        ('1v1', '1v1'),
+        ('2v2', '2v2'),
+        ('ffa', 'Free-for-All'), # For 1v1v1... formats
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),   # Not yet played
+        ('ongoing', 'Ongoing'),   # Currently being played
+        ('completed', 'Completed'), # Results entered
+    ]
+
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name='matches')
+    match_type = models.CharField(max_length=5, choices=MATCH_TYPE_CHOICES)
+    round_number = models.PositiveIntegerField(null=True, blank=True) # Optional: For tournament structures
+    match_datetime = models.DateTimeField(null=True, blank=True) # Optional: If matches are scheduled within the competition
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Match {self.id} ({self.get_match_type_display()}) in {self.competition}"
+
+    class Meta:
+        ordering = ['competition', 'round_number', 'match_datetime', 'created_at']
+        verbose_name = "Competition Match"
+        verbose_name_plural = "Competition Matches"
+
+
+class MatchParticipant(models.Model):
+    """Represents a player or team member's participation and result in a specific match."""
+    RESULT_TYPE_CHOICES = [
+        ('win', 'Win'),
+        ('loss', 'Loss'),
+        ('draw', 'Draw'),
+        ('rank', 'Rank'), # For FFA results
+        ('score', 'Score'), # If numerical score is primary result
+        ('pending', 'Pending'),
+    ]
+
+    match = models.ForeignKey(CompetitionMatch, on_delete=models.CASCADE, related_name='participants')
+    # Link directly to User. Ensure user is also a CompetitionParticipant if needed via validation.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='match_participations')
+    team = models.CharField(max_length=10, null=True, blank=True) # e.g., 'A', 'B' or 'Team 1', 'Team 2' for 2v2
+    result_type = models.CharField(max_length=10, choices=RESULT_TYPE_CHOICES, default='pending')
+    result_value = models.IntegerField(null=True, blank=True) # Stores rank (1, 2, 3...) for FFA, or score value
+    # score = models.IntegerField(null=True, blank=True) # Alternative/addition if needed
+
+    def __str__(self):
+        team_info = f" (Team {self.team})" if self.team else ""
+        result_info = f" - {self.get_result_type_display()}"
+        if self.result_type == 'rank' and self.result_value is not None:
+            result_info += f": {self.result_value}"
+        elif self.result_type == 'score' and self.result_value is not None:
+             result_info += f": {self.result_value}"
+
+        return f"{self.user.username}{team_info} in Match {self.match.id}{result_info}"
+
+    class Meta:
+        unique_together = ('match', 'user') # A user can only be in a specific match once
+        ordering = ['match', 'team', 'result_value'] # Order by match, team, then rank/score
+        verbose_name = "Match Participant"
+        verbose_name_plural = "Match Participants"
 
 

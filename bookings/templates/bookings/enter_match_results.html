@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Enter Results for Match {{ match.id }}{% endblock %}
+
+{% block content %}
+    <h1>Enter Match Results</h1>
+    <h2>Match #{{ match.id }} ({{ match.get_match_type_display }})</h2>
+    <p>Competition: {{ competition }}</p>
+    <p>Status: {{ match.get_status_display }}</p> {# Display current match status #}
+    <hr>
+
+    {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ formset.management_form }} {# Required for formset management #}
+
+        {% if formset.non_form_errors %}
+             <div class="error-message">
+                {% for error in formset.non_form_errors %}
+                    <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <table class="results-formset-table">
+            <thead>
+                <tr>
+                    <th>Participant</th>
+                    {% if match.match_type == '2v2' %}
+                        <th>Team</th>
+                    {% endif %}
+                    <th>Result</th> {# Single column for result input #}
+                </tr>
+            </thead>
+            <tbody>
+                {% for form in formset %}
+                    <tr>
+                        <td>
+                            {{ form.id }} {# Hidden ID field #}
+                            {# Display username - form field 'user' is disabled #}
+                            <strong>{{ form.instance.user.username }}</strong>
+                            {# Optionally display form.user if needed for debugging #}
+                        </td>
+                        {% if match.match_type == '2v2' %}
+                            <td>
+                                {# Display team - form field 'team' is disabled #}
+                                {{ form.instance.team|default:"N/A" }}
+                            </td>
+                        {% endif %}
+                        <td> {# Result input column #}
+                            {% if match.match_type == 'ffa' %}
+                                {{ form.result_rank_score.label_tag }} {# Label for Rank/Score #}
+                                {{ form.result_rank_score }}
+                                {% if form.result_rank_score.errors %}
+                                    <div class="field-error">{{ form.result_rank_score.errors|striptags }}</div>
+                                {% endif %}
+                                {{ form.result_simple }} {# Hidden field #}
+                            {% elif match.match_type == '1v1' or match.match_type == '2v2' %}
+                                {{ form.result_simple.label_tag }} {# Label for Win/Loss/Draw #}
+                                {{ form.result_simple }}
+                                {% if form.result_simple.errors %}
+                                    <div class="field-error">{{ form.result_simple.errors|striptags }}</div>
+                                {% endif %}
+                                {{ form.result_rank_score }} {# Hidden field #}
+                            {% else %}
+                                <p>Result entry not configured for this match type.</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="form-actions">
+            <button type="submit" class="button">Save Results</button>
+            <a href="{% url 'competition_detail' competition_id=competition.id %}" class="button button-secondary" style="margin-left: 10px;">Back to Competition</a>
+        </div>
+    </form>
+
+    {# Include CSS styles defined previously for this template #}
+    <style>
+        .results-formset-table { width: 100%; max-width: 800px; border-collapse: collapse; margin-bottom: 20px; }
+        .results-formset-table th, .results-formset-table td { border: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; }
+        .results-formset-table th { background-color: #f2f2f2; }
+        .results-formset-table td select, .results-formset-table td input[type="number"] { width: 95%; padding: 8px; max-width: 200px; }
+        .results-formset-table label { display: block; margin-bottom: 5px; font-weight: normal; font-size: 0.9em; color: #555; }
+        .field-error { color: red; font-size: 0.9em; margin-top: 4px; }
+        .error-message { color: red; background-color: #ffeeee; border: 1px solid #ffcccc; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+        .form-actions { margin-top: 20px; }
+        .button-secondary { background-color: #6c757d; color: white; }
+        .button-secondary:hover { background-color: #5a6268; }
+        ul.messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .messages li { padding: 10px; border-radius: 4px; margin-bottom: 5px; }
+        .messages li.success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .messages li.error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .messages li.warning { background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
+    </style>
+
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Assign Participants to Match {{ match.id }}{% endblock %}
+
+{% block content %}
+    <h1>Assign Participants</h1>
+    <h2>Match #{{ match.id }} ({{ match.get_match_type_display }})</h2>
+    <p>Competition: {{ competition }}</p>
+    <hr>
+
+     {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ formset.management_form }} {# Required for formset management #}
+
+        {% if formset.non_form_errors %}
+             <div class="error-message">
+                {% for error in formset.non_form_errors %}
+                    {{ error }}
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <table class="participant-formset-table">
+            <thead>
+                <tr>
+                    <th>Participant</th>
+                    {% if match_type == '2v2' %}
+                        <th>Team (A or B)</th>
+                    {% endif %}
+                    <th>Delete?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for form in formset %}
+                    <tr>
+                        <td>
+                            {{ form.id }} {# Hidden ID field for existing instances #}
+                            {% if form.instance.pk and form.errors.user %} {# Show username for existing record if error #}
+                                <p>Current: {{ form.instance.user.username }}</p>
+                            {% endif %}
+                            {{ form.user }}
+                            {% if form.user.errors %}
+                                <div class="field-error">{{ form.user.errors|striptags }}</div>
+                            {% endif %}
+                        </td>
+                        {% if match_type == '2v2' %}
+                            <td>
+                                {{ form.team }}
+                                {% if form.team.errors %}
+                                    <div class="field-error">{{ form.team.errors|striptags }}</div>
+                                {% endif %}
+                            </td>
+                        {% else %}
+                            {# Optionally render hidden team field if needed by logic, but form hides it #}
+                            {# {{ form.team }} #}
+                        {% endif %}
+                        <td>
+                            {% if form.instance.pk %}{{ form.DELETE }}{% endif %} {# Show delete checkbox only for existing items #}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="form-actions">
+            <button type="submit" class="button">Save Participants</button>
+            <a href="{% url 'competition_detail' competition_id=competition.id %}" class="button button-secondary" style="margin-left: 10px;">Back to Competition</a>
+        </div>
+    </form>
+
+    <p style="margin-top: 20px;">Eligible participants (from competition): {{ eligible_users_count }}</p>
+
+    <style>
+        .participant-formset-table {
+            width: 100%;
+            max-width: 700px;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .participant-formset-table th,
+        .participant-formset-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+         .participant-formset-table th {
+            background-color: #f2f2f2;
+         }
+         .participant-formset-table td select,
+         .participant-formset-table td input[type="text"] {
+             width: 95%;
+             padding: 6px;
+         }
+        .field-error {
+            color: red;
+            font-size: 0.9em;
+            margin-top: 4px;
+        }
+        .error-message { /* Style non-form errors */
+            color: red;
+            background-color: #ffeeee;
+            border: 1px solid #ffcccc;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .form-actions {
+            margin-top: 20px;
+        }
+         .button-secondary { background-color: #6c757d; color: white; }
+         .button-secondary:hover { background-color: #5a6268; }
+         /* Message styling */
+         ul.messages { list-style: none; padding: 0; margin-bottom: 15px; }
+         .messages li { padding: 10px; border-radius: 4px; margin-bottom: 5px; }
+         .messages li.success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+         .messages li.error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+         .messages li.warning { background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
+    </style>
+
+{% endblock %}

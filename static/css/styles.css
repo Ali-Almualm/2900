@@ -94,6 +94,19 @@ h1, h2, h3 {
     align-items: center;
 }
 
+.button-info {
+    background-color: #17a2b8; /* Teal/Info color */
+    color: white;
+}
+.button-info:hover {
+    background-color: #138496;
+}
+.button-small {
+    padding: 4px 8px;
+    font-size: 0.9em;
+    margin-right: 5px; /* Add some space */
+}
+
 /* Overlay content box */
 .overlay-content {
     background: white;
