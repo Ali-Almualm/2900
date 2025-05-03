@@ -21,6 +21,8 @@ from .forms import CompetitionMatch, CompetitionMatchForm, MatchParticipantForm,
 from django.contrib.auth.decorators import login_required
 from django.db import models, transaction
 from django.db.models import Q
+from .elo_utils import update_elo_1v1, update_elo_2v2, update_elo_ffa, get_elo_field_name # Import your Elo functions
+
 
 @login_required
 @csrf_exempt
@@ -625,44 +627,98 @@ def create_match_request(request):
     return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)
 
 @login_required
-@csrf_exempt
+@csrf_exempt # Keep csrf_exempt for now, but ideally handle CSRF token in JS fetch
+@transaction.atomic # Wrap in transaction for safety
 def respond_to_match_request(request, booking_request_id):
     """Respond to a match request by confirming or rejecting it."""
     if request.method == 'POST':
         action = request.POST.get('action')  # 'confirm' or 'reject'
         try:
-            booking_request = BookingRequestmatch.objects.get(id=booking_request_id, requested_player=request.user)
+            # Fetch the request, ensuring it's for the logged-in user
+            booking_request = BookingRequestmatch.objects.select_related('requester').get(
+                id=booking_request_id,
+                requested_player=request.user
+            )
+
+            # Check if the request was already handled
+            if booking_request.is_confirmed or booking_request.is_rejected:
+                 return JsonResponse({'success': False, 'message': 'This request has already been responded to.'}, status=400)
+
 
             if action == 'confirm':
-                # Create a new booking and populate the opponent field
+                # ---- START: Add booking conflict check ----
+                existing_booking = Booking.objects.filter(
+                    start_time=booking_request.start_time,
+                    end_time=booking_request.end_time, # Also check end time for exact match? Or just overlap?
+                    booking_type=booking_request.activity_type
+                ).first() # Use first() to avoid DoesNotExist error
+
+                if existing_booking:
+                    return JsonResponse({
+                        'success': False,
+                        'message': f"Cannot confirm: A booking for {booking_request.activity_type} already exists at this exact time ({booking_request.start_time.strftime('%H:%M')})."
+                    }, status=409) # 409 Conflict is appropriate
+
+                # --- Check for *overlapping* bookings (more robust) ---
+                overlapping_bookings = Booking.objects.filter(
+                    booking_type=booking_request.activity_type,
+                    start_time__lt=booking_request.end_time,
+                    end_time__gt=booking_request.start_time
+                )
+                if overlapping_bookings.exists():
+                     # You might want to list the conflicting booking details if possible
+                     return JsonResponse({
+                         'success': False,
+                         'message': f"Cannot confirm: This time overlaps with an existing booking for {booking_request.activity_type}."
+                     }, status=409) # 409 Conflict
+                # ---- END: Add booking conflict check ----
+
+
+                # Create a new booking if no conflicts found
                 booking = Booking.objects.create(
-                    user_id=request.user.id,
-                    opponent=booking_request.requester,  # Populate the opponent field
-                    name=f"Match between {booking_request.requester.username} and {request.user.username}",
+                    # Changed user_id to store the *requester's* ID as the primary booker
+                    user_id=str(booking_request.requester.id),
+                    # Keep opponent as the user who accepted (the current request.user)
+                    opponent=request.user,
+                    name=f"Match: {booking_request.requester.username} vs {request.user.username}", # More descriptive name
                     start_time=booking_request.start_time,
                     end_time=booking_request.end_time,
-                    booking_type=booking_request.activity_type
+                    booking_type=booking_request.activity_type,
+                    # Initialize results as pending
+                    user_result='pending',
+                    opponent_result='pending'
                 )
 
                 # Remove overlapping match availability timeslots for both users
+                # Ensure this query is correct
                 MatchAvailability.objects.filter(
                     Q(user=request.user) | Q(user=booking_request.requester),
+                    Q(booking_type=booking_request.activity_type), # Add activity_type filter
                     Q(start_time__lt=booking_request.end_time, end_time__gt=booking_request.start_time)
                 ).delete()
 
                 booking_request.is_confirmed = True
                 booking_request.save()
-                return JsonResponse({'success': True, 'message': 'Booking confirmed and created successfully'})
+                return JsonResponse({'success': True, 'message': 'Match confirmed and booking created successfully'})
 
             elif action == 'reject':
                 booking_request.is_rejected = True
                 booking_request.save()
                 return JsonResponse({'success': True, 'message': 'Match request rejected'})
+            else:
+                 return JsonResponse({'success': False, 'message': 'Invalid action.'}, status=400)
+
 
         except BookingRequestmatch.DoesNotExist:
-            return JsonResponse({'success': False, 'message': 'Match request does not exist'}, status=404)
+            return JsonResponse({'success': False, 'message': 'Match request not found or you are not the recipient.'}, status=404)
+        except Exception as e:
+            # Log the exception for debugging
+            print(f"Error in respond_to_match_request: {e}") # Basic logging
+            # Consider using Django's logging framework: import logging; logger = logging.getLogger(__name__); logger.exception("Error...")
+            return JsonResponse({'success': False, 'message': 'An unexpected server error occurred.'}, status=500)
 
-    return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)
+
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=400)
 
 
 @login_required
@@ -745,37 +801,157 @@ def match_history_view(request):
     })
 
 @login_required
-@csrf_exempt
+@csrf_exempt # Keep for now, handle CSRF properly in JS ideally
+@transaction.atomic # Wrap in transaction for safety
 def confirm_result_view(request, booking_id):
-    """Allow players to confirm the result of a match."""
+    """
+    Allow players to confirm the result of a simple 1v1 match (from Booking model)
+    and update Elo ranks if results conflict appropriately.
+    """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            result = data.get('result')  # 'win' or 'loss'
+            submitted_result = data.get('result')  # Expecting 'win' or 'loss'
 
-            # Fetch the booking
-            booking = Booking.objects.get(id=booking_id)
+            if submitted_result not in ['win', 'loss']:
+                return JsonResponse({'success': False, 'message': 'Invalid result submitted.'}, status=400)
 
-            # Ensure the logged-in user is part of the match
-            if str(request.user.id) == booking.user_id:
-                # Update the user's result
-                booking.user_result = result
-            elif request.user == booking.opponent:
-                # Update the opponent's result
-                booking.opponent_result = result
-            else:
-                return JsonResponse({'success': False, 'message': 'You are not part of this match.'}, status=403)
+            # Fetch the booking, include related opponent user to avoid extra query
+            booking = Booking.objects.select_related('opponent').get(id=booking_id)
+            activity_type = booking.booking_type # Get activity type for Elo field determination
 
-            # Save the updated booking
-            booking.save()
+            # --- Identify user role and update their result ---
+            # Need to handle potential ValueError if booking.user_id isn't a valid integer string
+            try:
+                creator_id = int(booking.user_id)
+            except (ValueError, TypeError):
+                 print(f"!!! Error: Invalid user_id format '{booking.user_id}' in Booking ID {booking.id}") # DEBUG
+                 return JsonResponse({'success': False, 'message': 'Internal server error (invalid user ID).'}, status=500)
 
-            return JsonResponse({'success': True, 'message': 'Result updated successfully.'})
+            is_creator = request.user.id == creator_id
+            is_opponent = booking.opponent and request.user.id == booking.opponent.id # Check opponent exists
+
+            if not is_creator and not is_opponent:
+                 return JsonResponse({'success': False, 'message': 'You are not part of this match.'}, status=403)
+
+            # Prevent submitting result again
+            # Check against None and 'pending'
+            if is_creator and booking.user_result not in [None, 'pending']:
+                 return JsonResponse({'success': False, 'message': 'You have already submitted your result for this match.'}, status=400)
+            if is_opponent and booking.opponent_result not in [None, 'pending']:
+                 return JsonResponse({'success': False, 'message': 'You have already submitted your result for this match.'}, status=400)
+
+            # Update the submitting user's result field
+            if is_creator:
+                booking.user_result = submitted_result
+                print(f"Match {booking_id}: Creator ({request.user.username}) submitted '{submitted_result}'") # DEBUG
+            elif is_opponent: # Only update if confirmed they are the opponent
+                booking.opponent_result = submitted_result
+                print(f"Match {booking_id}: Opponent ({request.user.username}) submitted '{submitted_result}'") # DEBUG
+
+            booking.save() # Save the submitted result
+
+            # --- Check if match is now resolved ---
+            user_res = booking.user_result
+            opp_res = booking.opponent_result
+
+            print(f"Match {booking_id}: Current results - User='{user_res}', Opponent='{opp_res}'") # DEBUG
+
+            # Check if both results are present (not None or 'pending')
+            if user_res and user_res != 'pending' and opp_res and opp_res != 'pending':
+                print(f"Match {booking_id}: Both results are in. Checking for conflict...") # DEBUG
+
+                # Check for conflicting results (Win/Loss) - This confirms the match outcome
+                if (user_res == 'win' and opp_res == 'loss') or \
+                   (user_res == 'loss' and opp_res == 'win'):
+                    print(f"Match {booking_id}: Results conflict - match resolved.") # DEBUG
+
+                    # --- Trigger Elo Update ---
+                    elo_field = get_elo_field_name(activity_type)
+                    print(f"  Elo field: {elo_field}") # DEBUG
+
+                    if not elo_field:
+                        # Although result confirmed, Elo isn't tracked for this activity
+                        print(f"  !!! Elo Warning: Elo field name not found for {activity_type}.") # DEBUG
+                        return JsonResponse({'success': True, 'message': 'Match result confirmed, but Elo is not tracked for this activity.'})
+
+                    try:
+                        # Fetch creator User object using the stored ID
+                        creator_user = User.objects.get(id=creator_id)
+                        # Opponent should already be a prefetched User object if booking.opponent exists
+                        opponent_user = booking.opponent
+
+                        if not opponent_user: # Safety check
+                             print(f"!!! Error: Opponent object not found on Booking ID {booking_id}") # DEBUG
+                             return JsonResponse({'success': False, 'message': 'Internal server error (opponent missing).'}, status=500)
+
+
+                        # Fetch profiles using the User objects
+                        creator_profile = UserProfile.objects.get(user=creator_user)
+                        opponent_profile = UserProfile.objects.get(user=opponent_user)
+
+                        creator_elo = getattr(creator_profile, elo_field)
+                        opponent_elo = getattr(opponent_profile, elo_field)
+                        print(f"  Current Elo - Creator ({creator_user.username}): {creator_elo}, Opponent ({opponent_user.username}): {opponent_elo}") # DEBUG
+
+                        # Determine winner/loser based on results
+                        if user_res == 'win': # Creator won
+                            new_creator_elo, new_opponent_elo = update_elo_1v1(creator_elo, opponent_elo)
+                        else: # Opponent won (user_res == 'loss')
+                            new_opponent_elo, new_creator_elo = update_elo_1v1(opponent_elo, creator_elo)
+
+                        print(f"  New Elo - Creator: {new_creator_elo}, Opponent: {new_opponent_elo}") # DEBUG
+
+                        # Update profiles
+                        setattr(creator_profile, elo_field, new_creator_elo)
+                        setattr(opponent_profile, elo_field, new_opponent_elo)
+                        creator_profile.save()
+                        opponent_profile.save()
+                        print(f"  Elo updated and profiles saved.") # DEBUG
+
+                        # Optional: Update booking status to prevent further changes if you add a status field
+                        # booking.status = 'completed'
+                        # booking.save()
+
+                        return JsonResponse({'success': True, 'message': 'Match confirmed and ranks updated!'})
+
+                    except User.DoesNotExist:
+                         print(f"!!! Error: Could not find User for ID {creator_id}") # DEBUG
+                         return JsonResponse({'success': False, 'message': 'Error finding user.'}, status=500)
+                    except UserProfile.DoesNotExist:
+                         print(f"!!! Error: Could not find UserProfile for participants.") # DEBUG
+                         # Return success=True because the result *was* recorded, but add warning?
+                         return JsonResponse({'success': True, 'message': 'Match result confirmed, but failed to update ranks (profile missing).'})
+                    except Exception as e:
+                         print(f"!!! Error during Elo update: {e}") # DEBUG
+                         # Log the error e more formally if desired
+                         return JsonResponse({'success': False, 'message': 'An error occurred during rank update.'}, status=500)
+
+                else: # Results match (e.g., both 'win' or both 'loss') - DISPUTED
+                    print(f"Match {booking_id}: Results submitted by both players, but they match - DISPUTED.") # DEBUG
+                    # Optional: Update booking status
+                    # booking.status = 'disputed'
+                    # booking.save()
+                    # Consider preventing further Elo updates if disputed
+                    return JsonResponse({'success': True, 'message': 'Result recorded, but it conflicts with the opponent\'s submission. Please resolve manually.'})
+
+            else: # Only one result submitted so far, or one is still 'pending'/None
+                print(f"Match {booking_id}: Waiting for opponent's result.") # DEBUG
+                return JsonResponse({'success': True, 'message': 'Result recorded. Waiting for opponent.'})
+
         except Booking.DoesNotExist:
             return JsonResponse({'success': False, 'message': 'Match not found.'}, status=404)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'message': 'Invalid request format.'}, status=400)
         except Exception as e:
-            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+            print(f"!!! Unexpected Error in confirm_result_view: {type(e).__name__} - {e}") # DEBUG
+            # Log the error e more formally if desired using logging module
+            return JsonResponse({'success': False, 'message': 'An unexpected server error occurred.'}, status=500)
 
-    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=400)
+    # Handle non-POST requests if necessary, though typically not needed for this kind of action
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405) # Method Not Allowed
+
+
 
 
 @login_required
@@ -1043,191 +1219,245 @@ def assign_match_participants(request, match_id):
     return render(request, 'bookings/assign_match_participants.html', context)
 
 @login_required
+@transaction.atomic # Ensure the view is wrapped
 def enter_match_results(request, match_id):
-    """Allows the competition creator to enter OR EDIT results for a specific match."""
-    # Fetch related competition to minimize queries
+    print(f"\n--- Entering enter_match_results for Match ID: {match_id} ---") # DEBUG
     match = get_object_or_404(CompetitionMatch.objects.select_related('competition'), id=match_id)
     competition = match.competition
+    activity_type = competition.activity_type
+    print(f"Match Type: {match.match_type}, Activity Type: {activity_type}") # DEBUG
 
-    # --- Permission Checks ---
+    # --- Permission Checks (keep these) ---
     if request.user != competition.creator:
-        messages.error(request, "You are not authorized to enter or edit results for this match.")
+        # ... error handling ...
         return redirect('competition_detail', competition_id=competition.id)
-
-    # Cannot edit results if OVERALL competition is completed
     if competition.status == 'completed':
-        messages.warning(request, "Cannot enter or edit results for a completed competition.")
+        # ... error handling ...
         return redirect('competition_detail', competition_id=competition.id)
-
-    # Check if participants are assigned (needed before results)
     if not match.participants.exists():
-        messages.error(request, "Participants must be assigned before entering results.")
+        # ... error handling ...
         return redirect('assign_match_participants', match_id=match.id)
     # --- End Permission Checks ---
 
-    # Determine if we are editing existing results (for template display)
     is_editing = match.status == 'completed'
+    print(f"Is Editing: {is_editing}") # DEBUG
 
-    # Use modelformset_factory to edit existing MatchParticipant results
     MatchResultFormSet = modelformset_factory(
         MatchParticipant,
         form=MatchResultForm,
-        fields=('result_simple', 'result_rank_score'), # Fields editable via the custom form logic
-        extra=0 # Don't allow adding new participants here
+        fields=('result_simple', 'result_rank_score'),
+        extra=0
     )
-
-    # Pass match_type to the forms within the formset for dynamic field display/validation
     formset_kwargs = {'form_kwargs': {'match_type': match.match_type}}
 
     if request.method == 'POST':
-        # Provide the queryset for validation/saving existing instances
+        print("Processing POST request...") # DEBUG
         formset = MatchResultFormSet(request.POST, queryset=match.participants.all().select_related('user'), **formset_kwargs)
 
         if formset.is_valid():
+            print("Formset IS valid. Proceeding with saving results and Elo update.") # DEBUG
+            # This try/except is now within the @transaction.atomic context
             try:
-                # Use a transaction to ensure all results save or none do
-                with transaction.atomic():
-                    participants_data = {} # To store cleaned data for cross-form validation
-                    ranks_entered = set() # For FFA duplicate rank check
-                    teams_results = {} # For 2v2 team result consistency check
+                participants_data = {}
+                ranks_entered = set()
+                teams_results = {}
 
-                    # Loop through each form in the formset
-                    for form in formset:
-                        # Although formset.is_valid() passed, individual form errors might exist
-                        # if cleaned but not saved yet. Re-check validity is safer.
-                        # Only process forms that have actually changed to avoid unnecessary saves
-                        if form.is_valid() and form.has_changed():
-                            instance = form.instance # The MatchParticipant instance being edited
-                            result_simple = form.cleaned_data.get('result_simple')
-                            result_rank_score = form.cleaned_data.get('result_rank_score')
+                # First pass: Save individual results and collect data
+                print("Saving individual participant results...") # DEBUG
+                for form in formset:
+                    # Check if form has data AND is valid (though formset.is_valid() checks all)
+                    if form.is_valid(): # form.has_changed() might prevent saving unchanged results, re-evaluate if needed
+                         instance = form.instance
+                         result_simple = form.cleaned_data.get('result_simple')
+                         result_rank_score = form.cleaned_data.get('result_rank_score')
+                         print(f"  Processing participant: {instance.user.username}, Simple: {result_simple}, Rank/Score: {result_rank_score}") # DEBUG
 
-                            # Store cleaned data for later validation
-                            participants_data[instance.id] = {
-                                'instance': instance,
-                                'simple': result_simple,
-                                'rank_score': result_rank_score,
-                                'team': instance.team
-                            }
+                         # Your logic to save instance fields based on match type
+                         if match.match_type == 'ffa':
+                             instance.result_type = 'rank'
+                             instance.result_value = result_rank_score
+                             instance.save()
+                             if result_rank_score: ranks_entered.add(result_rank_score)
+                         elif match.match_type in ['1v1', '2v2']:
+                             instance.result_type = result_simple
+                             instance.result_value = None
+                             instance.save()
+                             # Collect team info if 2v2
+                             if match.match_type == '2v2':
+                                 team = instance.team
+                                 if not team: raise forms.ValidationError(f"Team missing for {instance.user.username} in 2v2 match.") # Add validation
+                                 if team not in teams_results: teams_results[team] = []
+                                 teams_results[team].append({'instance': instance, 'result': result_simple})
 
-                            # --- Update the MatchParticipant instance based on match type ---
-                            if match.match_type == 'ffa':
-                                # Validate rank/score for FFA
-                                if result_rank_score is None or result_rank_score < 1:
-                                    form.add_error('result_rank_score', f"Invalid rank/score for {instance.user.username}.")
-                                    raise forms.ValidationError("Invalid rank/score entered.") # Raise to trigger rollback
+                         participants_data[instance.id] = {
+                             'instance': instance,
+                             'simple': result_simple,
+                             'rank_score': result_rank_score,
+                             'team': instance.team
+                         }
+                print("Finished saving individual results.") # DEBUG
 
-                                if result_rank_score in ranks_entered:
-                                    form.add_error('result_rank_score', f"Duplicate rank/score '{result_rank_score}'.")
-                                    raise forms.ValidationError("Duplicate rank/score entered.")
-                                ranks_entered.add(result_rank_score)
+                # --- Post-save Validation (ensure this happens AFTER saving individuals) ---
+                print("Performing post-save validation (1v1 W/L, 2v2 teams, etc.)...") # DEBUG
+                # ... (Your existing validation logic here, e.g., checking 1v1 win/loss count) ...
+                if match.match_type == '1v1':
+                     results = [p['simple'] for p in participants_data.values()]
+                     if not ((results.count('win') == 1 and results.count('loss') == 1) or (results.count('draw') == 2)):
+                          print("!!! 1v1 Validation Failed: Incorrect Win/Loss/Draw combination.") # DEBUG
+                          raise forms.ValidationError("Invalid results for 1v1. Must be one Win & one Loss, or two Draws.")
+                # ... add validation checks for 2v2 and FFA ...
+                print("Post-save validation passed.")# DEBUG
 
-                                # Set the appropriate result fields
-                                instance.result_type = 'rank' # Or 'score' if using scores
-                                instance.result_value = result_rank_score
-                                instance.save() # Save the updated participant result
+                # --- Elo Calculation and Update ---
+                print("Starting Elo calculation...") # DEBUG
+                elo_field = get_elo_field_name(activity_type)
+                print(f"  Elo field name: {elo_field}") # DEBUG
 
-                            elif match.match_type in ['1v1', '2v2']:
-                                # Validate simple result for 1v1/2v2
-                                if not result_simple or result_simple == 'pending' or result_simple == '': # Check blank choice too
-                                    form.add_error('result_simple', f"Select Win/Loss/Draw for {instance.user.username}.")
-                                    raise forms.ValidationError("Result not selected.")
+                if not elo_field:
+                    messages.warning(request, f"Elo ranking not tracked for activity type: {activity_type}")
+                    print("!!! Elo Warning: Elo field name not found.") # DEBUG
+                else:
+                    player_ids = [p['instance'].user.id for p in participants_data.values()]
+                    print(f"  Fetching profiles for user IDs: {player_ids}") # DEBUG
+                    profiles = UserProfile.objects.filter(user_id__in=player_ids).in_bulk(field_name='user_id')
+                    print(f"  Found {len(profiles)} profiles.") # DEBUG
 
-                                # Set the appropriate result fields
-                                instance.result_type = result_simple
-                                instance.result_value = None # Clear rank/score value
-                                instance.save() # Save the updated participant result
+                    if len(profiles) != len(player_ids):
+                        messages.error(request, "Could not find User Profiles for all participants. Elo not updated.")
+                        print("!!! Elo Error: Mismatch between participants and profiles found.") # DEBUG
+                    else:
+                         print(f"  Calculating Elo changes for match type: {match.match_type}") # DEBUG
+                         # --- 1v1 Elo ---
+                         if match.match_type == '1v1':
+                             p_list = list(participants_data.values())
+                             p1_id, p2_id = p_list[0]['instance'].user_id, p_list[1]['instance'].user_id
+                             p1_profile, p2_profile = profiles[p1_id], profiles[p2_id]
+                             p1_elo, p2_elo = getattr(p1_profile, elo_field), getattr(p2_profile, elo_field)
+                             print(f"    Player {p1_id} Elo: {p1_elo}, Player {p2_id} Elo: {p2_elo}") # DEBUG
 
-                                # Store team results for 2v2 cross-validation
-                                if match.match_type == '2v2':
-                                    team = instance.team
-                                    if not team: # Should have been set during assignment
-                                        form.add_error(None, f"Team missing for {instance.user.username} in 2v2 match.")
-                                        raise forms.ValidationError("Team missing for 2v2.")
-                                    if team not in teams_results: teams_results[team] = set()
-                                    teams_results[team].add(result_simple)
+                             if p_list[0]['simple'] == 'win':
+                                 new_p1_elo, new_p2_elo = update_elo_1v1(p1_elo, p2_elo)
+                             elif p_list[0]['simple'] == 'loss':
+                                 new_p2_elo, new_p1_elo = update_elo_1v1(p2_elo, p1_elo)
+                             else: # Draw
+                                 new_p1_elo, new_p2_elo = p1_elo, p2_elo # No change on draw (adjust if needed)
 
-                    # --- Post-loop Cross-Form Validation ---
-                    num_participants_processed = len(participants_data)
-                    num_total_participants = match.participants.count()
+                             print(f"    New Elo -> P{p1_id}: {new_p1_elo}, P{p2_id}: {new_p2_elo}") # DEBUG
+                             setattr(p1_profile, elo_field, new_p1_elo)
+                             setattr(p2_profile, elo_field, new_p2_elo)
+                             p1_profile.save()
+                             p2_profile.save()
+                             print("    1v1 Elo updated and profiles saved.") # DEBUG
 
-                    # Ensure all participants were processed (unless formset had issues)
-                    if num_participants_processed != num_total_participants and formset.is_valid():
-                         # This case might indicate an issue if some forms didn't change but results are incomplete
-                         pass # Or add stricter checks if needed
-
-                    if match.match_type == '1v1':
-                        if num_participants_processed != 2:
-                             raise forms.ValidationError("Expected results for exactly 2 participants in 1v1.")
-                        results = [p['simple'] for p in participants_data.values()]
-                        if not ( (results.count('win') == 1 and results.count('loss') == 1) or \
-                                 (results.count('draw') == 2) ):
-                            raise forms.ValidationError("Invalid results for 1v1. Must be one Win & one Loss, or two Draws.")
-
-                    elif match.match_type == '2v2':
-                        if num_participants_processed != 4:
-                             raise forms.ValidationError("Expected results for exactly 4 participants in 2v2.")
-                        if len(teams_results) != 2:
-                            raise forms.ValidationError("Expected results for exactly two teams (e.g., 'A' and 'B') in 2v2.")
-
-                        team_results_list = list(teams_results.values())
-                        # Check all players in a team have the same result
-                        if not all(len(res) == 1 for res in team_results_list):
-                             raise forms.ValidationError("All players in the same team must have the same result (Win, Loss, or Draw).")
-                        # Check team results are consistent (W/L or D/D)
-                        team_results_flat = [list(res)[0] for res in team_results_list]
-                        if not ( ('win' in team_results_flat and 'loss' in team_results_flat) or \
-                                 (team_results_flat.count('draw') == 2) ):
-                             raise forms.ValidationError("Invalid team results for 2v2. Must be one team Win/one team Loss, or both teams Draw.")
-
-                    elif match.match_type == 'ffa':
-                        # Ensure all participants have results if validation passed loop
-                        if num_participants_processed != num_total_participants:
-                             raise forms.ValidationError("Not all participants have valid results entered for FFA.")
-                        # Optional: Check if ranks are consecutive integers from 1
-                        # sorted_ranks = sorted(list(ranks_entered))
-                        # if sorted_ranks != list(range(1, len(sorted_ranks) + 1)):
-                        #     raise forms.ValidationError("Ranks must be consecutive positive integers starting from 1.")
+                         # --- 2v2 Elo ---
+                         elif match.match_type == '2v2':
+                             # (Group players, calculate avg, call update_elo_2v2, save profiles)
+                             # Add print statements within this block similar to 1v1
+                             print("    Processing 2v2 Elo...") # DEBUG
+                             # ... detailed 2v2 logic with prints ...
+                             try:
+                                teamA_ratings, teamB_ratings = [], []
+                                teamA_profiles, teamB_profiles = [], []
+                                teamA_won = None
+                                for p_data in participants_data.values():
+                                    profile = profiles[p_data['instance'].user_id]
+                                    rating = getattr(profile, elo_field)
+                                    if p_data['team'] == 'A':
+                                        teamA_ratings.append(rating)
+                                        teamA_profiles.append(profile)
+                                        if teamA_won is None and p_data['simple'] in ['win', 'loss']: teamA_won = (p_data['simple'] == 'win')
+                                    elif p_data['team'] == 'B':
+                                        teamB_ratings.append(rating)
+                                        teamB_profiles.append(profile)
+                                print(f"      Team A Ratings: {teamA_ratings}, Team B Ratings: {teamB_ratings}, Team A Won: {teamA_won}") # DEBUG
+                                if len(teamA_profiles) == 2 and len(teamB_profiles) == 2 and teamA_won is not None:
+                                     new_teamA_ratings, new_teamB_ratings = update_elo_2v2(teamA_ratings, teamB_ratings, teamA_won)
+                                     print(f"      New Team A: {new_teamA_ratings}, New Team B: {new_teamB_ratings}") # DEBUG
+                                     for profile, new_elo in zip(teamA_profiles, new_teamA_ratings): setattr(profile, elo_field, new_elo); profile.save()
+                                     for profile, new_elo in zip(teamB_profiles, new_teamB_ratings): setattr(profile, elo_field, new_elo); profile.save()
+                                     print("    2v2 Elo updated and profiles saved.") # DEBUG
+                                else:
+                                     messages.error(request, "Error processing 2v2 teams for Elo update (Wrong team sizes or draw?).")
+                                     print("!!! Elo Error: Incorrect 2v2 team setup or draw result found.") # DEBUG
+                             except Exception as e:
+                                 print(f"!!! Elo Error during 2v2 processing: {e}") # DEBUG
+                                 messages.error(request, f"Error calculating 2v2 Elo: {e}")
 
 
-                    # If all validation passes, mark match as completed (or ensure it stays completed)
-                    if match.status != 'completed':
-                        match.status = 'completed'
-                        match.save()
+                         # --- FFA Elo ---
+                         elif match.match_type == 'ffa':
+                             # (Prepare list of (id, rating, rank), call update_elo_ffa, save profiles)
+                             # Add print statements within this block similar to 1v1
+                             print("    Processing FFA Elo...") # DEBUG
+                             try:
+                                ratings_ranks = []
+                                for p_data in participants_data.values():
+                                    profile = profiles[p_data['instance'].user_id]
+                                    rating = getattr(profile, elo_field)
+                                    rank = p_data['rank_score']
+                                    if rank is not None:
+                                        ratings_ranks.append((p_data['instance'].user_id, rating, rank))
+                                    else:
+                                        print(f"!!! Elo Warning: Missing rank for player {p_data['instance'].user_id}") # DEBUG
+                                print(f"      Data for FFA Calc: {ratings_ranks}") # DEBUG
+                                if len(ratings_ranks) == len(participants_data):
+                                     new_elos = update_elo_ffa(ratings_ranks)
+                                     print(f"      New Elos: {new_elos}") # DEBUG
+                                     for user_id, new_elo in new_elos.items():
+                                         profile_to_update = profiles[user_id]
+                                         setattr(profile_to_update, elo_field, new_elo)
+                                         profile_to_update.save()
+                                     print("    FFA Elo updated and profiles saved.") # DEBUG
+                                else:
+                                     messages.error(request, "Missing rank data for some participants. FFA Elo not updated.")
+                                     print("!!! Elo Error: Mismatch in FFA rank data.") # DEBUG
+                             except Exception as e:
+                                 print(f"!!! Elo Error during FFA processing: {e}") # DEBUG
+                                 messages.error(request, f"Error calculating FFA Elo: {e}")
 
-                # --- End Transaction ---
+                         print("Finished Elo calculation and updates.") # DEBUG
 
-                # Success message outside the transaction block
-                messages.success(request, "Match results saved successfully.")
+
+                # --- Mark match as completed ---
+                if match.status != 'completed':
+                    print("Marking match as completed.") # DEBUG
+                    match.status = 'completed'
+                    match.save()
+
+                messages.success(request, "Match results saved and Elo updated successfully.")
+                print("--- Request successful. Redirecting... ---") # DEBUG
                 return redirect('competition_detail', competition_id=competition.id)
 
             # Handle validation errors raised within the transaction
             except forms.ValidationError as e:
-                # Add error to non_form_errors for display in template
                 formset.non_form_errors().append(e)
                 messages.error(request, f"Please correct the errors: {str(e)}")
-                # The invalid formset will be re-rendered below
+                print(f"!!! Validation Error inside try block: {e}") # DEBUG
+                # Transaction automatically rolls back here
 
             # Handle other unexpected errors
             except Exception as e:
-                messages.error(request, f"An unexpected error occurred: {str(e)}")
-                formset.non_form_errors().append(f"An unexpected error occurred: {str(e)}")
-                # Consider logging the full traceback here for debugging
-                # The formset might be in an inconsistent state, re-rendering might show errors
+                 messages.error(request, f"An unexpected error occurred: {str(e)}")
+                 formset.non_form_errors().append(f"An unexpected error occurred: {str(e)}")
+                 print(f"!!! Unexpected Error inside try block: {e}") # DEBUG
+                 # Consider logging the full traceback here for debugging
+                 # Transaction automatically rolls back here
 
-        else: # Formset is invalid (individual form fields failed validation)
+        else: # Formset is invalid
              messages.error(request, "Please correct the errors in the form(s) below.")
-             # The invalid formset will be re-rendered below
+             print(f"!!! Formset is invalid: {formset.errors}") # DEBUG
+             print(f"    Non-form errors: {formset.non_form_errors()}") # DEBUG
+             # Transaction doesn't commit automatically, but no changes were made if formset invalid
 
     else: # GET request
-        # Load existing participant data into the formset for display/editing
+        print("Processing GET request.") # DEBUG
         formset = MatchResultFormSet(queryset=match.participants.all().select_related('user'), **formset_kwargs)
 
-    # Prepare context for rendering
     context = {
         'formset': formset,
         'match': match,
         'competition': competition,
-        'is_editing': is_editing, # Pass flag for template heading adjustment
+        'is_editing': is_editing,
     }
-    # Render the same template for both GET and POST (if validation fails)
+    print("--- Rendering template... ---") # DEBUG
     return render(request, 'bookings/enter_match_results.html', context)

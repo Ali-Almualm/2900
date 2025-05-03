@@ -92,9 +92,9 @@ class Booking(models.Model):
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    ranking_switch = models.IntegerField(default=0)
-    ranking_pool = models.IntegerField(default=0)
-    ranking_table_tennis = models.IntegerField(default=0)
+    ranking_switch = models.IntegerField(default=1500)
+    ranking_pool = models.IntegerField(default=1500)
+    ranking_table_tennis = models.IntegerField(default=1500)
 
     def __str__(self):
         return self.user.username
@@ -103,10 +103,15 @@ class UserProfile(models.Model):
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
         UserProfile.objects.create(user=instance)
+
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
-    instance.userprofile.save()
-
+    if hasattr(instance, 'userprofile'):
+        instance.userprofile.save()
+    else:
+        # If profile doesn't exist (e.g., for users created before signals), create it
+        UserProfile.objects.create(user=instance)
+        
 class Competition(models.Model):
     ACTIVITY_CHOICES = Booking.BOOKING_TYPES # Reuse choices from Booking
     STATUS_CHOICES = [

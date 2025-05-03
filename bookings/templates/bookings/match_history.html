@@ -98,15 +98,35 @@
                         {% endif %}
                     {% endif %}
                 </td>
-                <td>
-                    {% if match.user_id == user.id|stringformat:"s" and not match.user_result %}
-                        <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
-                        <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
-                    {% elif match.opponent and match.opponent.id == user.id and not match.opponent_result %}
-                        <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
-                        <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                <td> {# Action Column #}
+                    {# Condition 1: Check if user is creator #}
+                    {% if match.user_id == user.id|stringformat:"s" %}
+                        {# THEN check if creator's result is pending #}
+                        {% if match.user_result == 'pending' or match.user_result is None %}
+                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                        {% else %}
+                            {# Optionally show something if result submitted but opponent hasn't #}
+                            -
+                        {% endif %}
+    
+                    {# Condition 2: Check if user is opponent #}
+                    {% elif match.opponent and match.opponent.id == user.id %}
+                        {# THEN check if opponent's result is pending #}
+                        {% if match.opponent_result == 'pending' or match.opponent_result is None %}
+                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                        {% else %}
+                             {# Optionally show something if result submitted but opponent hasn't #}
+                             -
+                        {% endif %}
+    
+                    {# Fallback if user is neither participant or results are final #}
+                    {% else %}
+                        -
                     {% endif %}
                 </td>
+
                 <td>
                     <!-- Debugging Information for Each Match -->
                     <p>Match Creator ID: {{ match.user_id }}</p>
