@@ -49,8 +49,9 @@
                     <th>Type</th>
                     <th>Status</th>
                     <th>Players/Teams</th>
-                    <th>Action</th> {# Keep the existing Action column #}
-                    <th>Management</th> {# Add a new column for management links #}
+                    {# --- SWAPPED ORDER --- #}
+                    <th>Management</th> {# Management comes first now #}
+                    <th>Action</th>     {# Action comes second now #}
                 </tr>
             </thead>
             <tbody>
@@ -60,26 +61,16 @@
                     <td>{{ match.get_match_type_display }}</td>
                     <td>{{ match.get_status_display }}</td>
                     <td>
-                        {# Display participants nicely based on type later #}
                         {% for mp in match.participants.all %}
-                            {{ mp.user.username }}{% if mp.team %} (Team {{ mp.team }}){% endif %}{% if not forloop.last %}, {% endif %}
+                            {{ mp.user.username }}{% if mp.team %} (Team {{ mp.team }}){% endif %}
+                            {% if not forloop.last %}, {% endif %}
                         {% empty %}
                             <span style="color:orange;">Participants not assigned</span>
                         {% endfor %}
                     </td>
-                    <td> {# Existing Action column for results #}
-                        {% if is_creator and match.status != 'completed' and competition.status != 'completed' and match.participants.exists %} {# Only allow results if participants exist #}
-                            <a href="{% url 'enter_match_results' match_id=match.id %}" class="button button-small">Enter Results</a>
-                            <span style="color: gray;">(Enter Results - TBD)</span>
-                        {% elif match.status == 'completed' %}
-                            <span class="status-completed">Results Recorded</span>
-                        {% elif not match.participants.exists and is_creator %}
-                             <span style="color: gray;">Assign participants first</span>
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td> {# New Management column #}
+        
+                    {# --- SWAPPED ORDER --- #}
+                    <td> {# Management column's data #}
                         {% if is_creator and competition.status != 'completed' %}
                          <a href="{% url 'assign_match_participants' match_id=match.id %}" class="button button-small button-secondary">
                              {% if match.participants.exists %}Manage{% else %}Assign{% endif %} Participants
@@ -88,14 +79,84 @@
                          -
                         {% endif %}
                     </td>
+                    <td> {# Action column's data #}
+                        {% if is_creator and competition.status != 'completed' %} {# Can only act if creator and competition is NOT completed #}
+    
+                            {% if match.status != 'completed' %}
+                                {% if match.participants.exists %} {# Can only enter results if participants exist #}
+                                    <a href="{% url 'enter_match_results' match_id=match.id %}" class="button button-small">Enter Results</a>
+                                {% else %}
+                                     <span style="color: gray;">Assign participants first</span>
+                                {% endif %}
+                            {% else %} {# Match status IS completed, show Edit button #}
+                                <a href="{% url 'enter_match_results' match_id=match.id %}" class="button button-small button-secondary">Edit Results</a> {# Link to the SAME view #}
+                            {% endif %}
+    
+                        {% elif match.status == 'completed' %} {# If not creator or competition is completed, just show status #}
+                            <span class="status-completed">Results Recorded</span>
+                        {% else %}
+                             - {# Should only happen if match is pending and user isn't creator #}
+                        {% endif %}
+                    </td>
+        
                 </tr>
             {% endfor %}
             </tbody>
-        </table>
-                {% else %}
+        </table>                {% else %}
             <p>No matches have been created for this competition yet.</p>
         {% endif %}
     </div>
+
+    <hr> {# Separator #}
+
+{# NEW Match Results Section #}
+<div class="match-results-list">
+    <h3>
+        {# Dynamic Title - Remains the same #}
+        {% if competition.status == 'completed' %}
+            Final Match Results
+        {% else %}
+            Current Match Results
+        {% endif %}
+    </h3>
+
+    {% if matches %}
+        {# Check the flag passed from the view #}
+        {% if has_completed_matches %}
+            <ul class="results-summary-list">
+                {# Loop through matches and only display completed ones #}
+                {% for match in matches %}
+                    {% if match.status == 'completed' %}
+                        <li>
+                            <strong>Match {{ match.id }} ({{ match.get_match_type_display }}):</strong>
+                            {% for mp in match.participants.all %}
+                                {{ mp.user.username }}
+                                {# Display result clearly #}
+                                {% if mp.result_type == 'win' %}<span class="result-win">(Win)</span>
+                                {% elif mp.result_type == 'loss' %}<span class="result-loss">(Loss)</span>
+                                {% elif mp.result_type == 'draw' %}<span class="result-draw">(Draw)</span>
+                                {% elif mp.result_type == 'rank' and mp.result_value is not None %}<span class="result-rank">(Rank: {{ mp.result_value }})</span>
+                                {% elif mp.result_type == 'score' and mp.result_value is not None %}<span class="result-score">(Score: {{ mp.result_value }})</span>
+                                {% endif %}
+                                {% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                <span style="color:gray;">No participants data for this match.</span>
+                            {% endfor %}
+                        </li>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        {% else %}
+            {# This message shows if there are matches, but none are completed yet #}
+            <p>No match results have been recorded yet.</p>
+        {% endif %}
+    {% else %}
+        {# This message shows if there are no matches at all for the competition #}
+        <p>No matches have been created for this competition yet.</p>
+    {% endif %}
+</div>
+{# End of NEW Match Results Section #}
+
 
     <hr>
 
@@ -132,6 +193,59 @@
         .button-danger {
             background-color: #dc3545;
             color: white;
+        }
+        .match-results-list {
+        margin-bottom: 20px;
+        padding: 15px;
+        background-color: #f9f9f9; /* Match other sections */
+        border: 1px solid #eee;    /* Match other sections */
+        border-radius: 5px;      /* Match other sections */
+        }
+
+        .match-results-list h3 {
+            margin-top: 0; /* Remove default top margin */
+            margin-bottom: 15px; /* Space below title */
+            padding-bottom: 10px; /* Space above border */
+            border-bottom: 1px solid #eee; /* Match styling of other section titles */
+            font-size: 1.1em; /* Adjust as needed */
+            color: #333;
+        }
+
+        .results-summary-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .results-summary-list li {
+            padding: 6px 0; /* Vertical padding */
+            margin-bottom: 4px; /* Space between list items */
+            border-bottom: 1px dotted #ddd; /* Subtle separator */
+            font-size: 0.95em;
+        }
+        .results-summary-list li:last-child {
+            border-bottom: none; /* No border on the last item */
+        }
+
+        .results-summary-list strong { /* Style the "Match X:" part */
+            margin-right: 8px;
+            color: #555;
+        }
+
+        /* Optional: Specific styles for results */
+        .result-win {
+            color: #28a745; /* Green */
+            font-weight: bold;
+        }
+        .result-loss {
+            color: #dc3545; /* Red */
+            font-weight: bold;
+        }
+        .result-draw {
+            color: #ffc107; /* Amber */
+        }
+        .result-rank, .result-score {
+            color: #007bff; /* Blue */
         }
         .button-danger:hover {
             background-color: #c82333;

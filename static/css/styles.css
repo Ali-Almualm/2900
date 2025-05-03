@@ -34,19 +34,31 @@ h1, h2, h3 {
     border-radius: 4px;
     border: 1px solid #007bff;
 }
-
+/* In styles.css */
+.table-wrapper {
+    width: 100%; /* Make wrapper fill the .matches-list container */
+    overflow-x: auto; /* Add scrollbar to the wrapper */
+    margin-bottom: 20px; /* Apply bottom margin here perhaps */
+  }
+  
+  .match-history-table {
+    width: 100%; /* Ensure table fills the wrapper */
+    /* Other styles like border-collapse, font-size... */
+    border-collapse: collapse;
+    /* margin: 20px 0; REMOVE margin if applied on wrapper */
+    font-size: 16px;
+    text-align: left;
+  }
 .navigation a:hover {
     background-color: #007bff;
     color: #fff;
 }
 
-/* Table container */
 .table-container {
     margin: 0 auto;
-    width: 90%; /* Adjust width as needed */
-    max-width: 900px; /* Restrict max width for large screens */
+    width: 90%;
+    max-width: 1400px; /* Or 1200px, 1600px, etc. */
 }
-
 /* Timetable table */
 .timetable {
     border-collapse: collapse;
@@ -180,3 +192,4 @@ button {
 button:hover {
     background-color: #0056b3;
 }
+

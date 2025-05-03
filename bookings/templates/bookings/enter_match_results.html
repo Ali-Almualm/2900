@@ -3,10 +3,11 @@
 {% block title %}Enter Results for Match {{ match.id }}{% endblock %}
 
 {% block content %}
-    <h1>Enter Match Results</h1>
+    {# Dynamically set header based on whether results already exist #}
+    <h1>{% if is_editing %}Edit{% else %}Enter{% endif %} Match Results</h1>
     <h2>Match #{{ match.id }} ({{ match.get_match_type_display }})</h2>
     <p>Competition: {{ competition }}</p>
-    <p>Status: {{ match.get_status_display }}</p> {# Display current match status #}
+    <p>Status: {{ match.get_status_display }}</p>
     <hr>
 
     {% if messages %}
