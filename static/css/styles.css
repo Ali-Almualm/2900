@@ -34,6 +34,131 @@ h1, h2, h3 {
     border-radius: 4px;
     border: 1px solid #007bff;
 }
+/* static/css/styles.css */
+
+/* --- Styles for Tab Navigation --- */
+.tab-navigation {
+    border-bottom: 2px solid #ccc; /* Separator line below tabs */
+    margin-bottom: 15px;
+    padding-bottom: 5px; /* Space between text and line */
+    display: flex; /* Align tabs horizontally */
+    gap: 5px; /* Space between tabs */
+}
+
+.tab-link {
+    padding: 8px 15px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-bottom: none; /* Remove bottom border for tab look */
+    background-color: #f1f1f1; /* Default tab background */
+    border-radius: 6px 6px 0 0; /* Rounded top corners */
+    font-size: 1em;
+    color: #333;
+    transition: background-color 0.3s ease; /* Smooth hover effect */
+}
+
+.tab-link:hover {
+    background-color: #ddd; /* Slightly darker on hover */
+}
+
+.tab-link.active {
+    background-color: #fff; /* Active tab background (match content area) */
+    border-color: #ccc;
+    border-bottom: 2px solid #fff; /* Cover the main border line */
+    margin-bottom: -2px; /* Pull active tab down slightly to overlap border */
+    font-weight: bold;
+    color: #007bff; /* Active tab text color */
+}
+
+/* --- Styles for Tab Content Panes --- */
+.tab-pane {
+    display: none; /* Hide inactive panes */
+    padding-top: 15px; /* Add some space above the content */
+    animation: fadeIn 0.5s; /* Optional fade-in animation */
+}
+
+.tab-pane.active {
+    display: block; /* Show active pane */
+}
+/* static/css/styles.css */
+
+/* ... existing styles ... */
+
+/* Style for the date navigation buttons */
+.date-nav-button {
+    padding: 6px 10px; /* Adjust padding to match date input height */
+    text-decoration: none; /* Remove underline from links styled as buttons */
+    font-size: 0.9em;
+    line-height: 1.5; /* Align text vertically */
+    margin: 0; /* Override default button margin if needed */
+    display: inline-block; /* Ensure proper alignment */
+    vertical-align: middle; /* Align with date input */
+}
+
+/* Optional: Specific styling if using <a> tags instead of <button> for nav */
+a.button {
+    /* Inherit general button styles or define specific ones */
+     background-color: #007bff;
+     color: #fff;
+     border: none;
+     padding: 6px 12px;
+     border-radius: 4px;
+     cursor: pointer;
+     text-decoration: none; /* Ensure no underline */
+     display: inline-block; /* Needed for padding etc. */
+}
+a.button:hover {
+    background-color: #0056b3;
+}
+
+
+/* Style for the date selector container */
+.date-selector {
+    /* display: flex; align-items: center; gap: 10px; */ /* Already added inline style */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+/* --- End Date Nav Styles --- */
+
+/* Optional Fade-in Animation */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Ensure table wrapper allows horizontal scroll on smaller screens if needed */
+.table-wrapper {
+  overflow-x: auto;
+}
+
+/* --- Optional: Add button styling classes used in the template --- */
+.button-danger {
+    background-color: #dc3545; /* Red */
+    color: white;
+}
+.button-danger:hover { background-color: #c82333; }
+
+.button-success {
+    background-color: #28a745; /* Green */
+    color: white;
+}
+.button-success:hover { background-color: #218838; }
+
+.button-info {
+    background-color: #17a2b8; /* Teal/Info color */
+    color: white;
+}
+.button-info:hover { background-color: #138496; }
+
+.button-small {
+    padding: 4px 8px;
+    font-size: 0.9em;
+}
+
+
+/* --- End Tab Styles --- */
+
+/* ... (rest of your styles.css) ... */
 /* In styles.css */
 .table-wrapper {
     width: 100%; /* Make wrapper fill the .matches-list container */
@@ -86,6 +211,67 @@ h1, h2, h3 {
     color: green;
     font-weight: bold;
 }
+header {
+    border-bottom: 1px solid #eee; /* Optional: add a separator below header */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.header-main {
+    display: flex; /* Enable Flexbox */
+    justify-content: space-between; /* Push title left, welcome right */
+    align-items: center; /* Vertically align items in the middle */
+    margin-bottom: 10px; /* Space between title row and nav links */
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+}
+
+.header-main h1 {
+    margin: 0; /* Remove default margin from h1 */
+    font-size: 2.5em; /* Adjust title size if needed */
+}
+
+/* --- Updated User Welcome Styles --- */
+.user-welcome {
+    /* Removed display: inline-block; */
+    /* Removed margin-left: 15px; */
+    color: #333; /* Darker color for more visibility */
+    font-weight: bold;
+    font-size: 1.1em; /* Make it slightly larger */
+    white-space: nowrap; /* Prevent wrapping */
+    /* Add padding if needed */
+    /* padding: 5px; */
+}
+
+/* --- Navigation Styles - Adjust as needed --- */
+nav {
+    font-size: 0.95em;
+    /* Optional: Adjust spacing if needed */
+    /* line-height: 1.6; */
+}
+
+nav a {
+    margin-right: 8px; /* Adjust spacing */
+    margin-left: 8px;
+}
+
+/* Responsive adjustments for header */
+@media (max-width: 600px) {
+    .header-main {
+        flex-direction: column; /* Stack title and welcome message */
+        align-items: flex-start; /* Align items to the start */
+        margin-bottom: 15px;
+    }
+    .user-welcome {
+        margin-top: 5px; /* Add space below title when stacked */
+        font-size: 1em; /* Adjust size for mobile */
+    }
+    /* Keep nav links stacked as before or adjust */
+     nav a {
+         display: block;
+         margin: 5px 0;
+     }
+}
+
 
 .timetable td input[type="checkbox"] {
     margin: 0;

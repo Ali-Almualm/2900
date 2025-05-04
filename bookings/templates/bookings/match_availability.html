@@ -1,284 +1,149 @@
+{# bookings/templates/bookings/match_availability.html #}
+
 {% extends "base.html" %}
 {% load static custom_filters %}
 
 {% block content %}
-{# Changed Title #}
 <h1>{{ activity_type|title }} Match Availability</h1>
 
 {% if error %}
 <div class="error-message">{{ error }}</div>
 {% endif %}
 
-{# Changed form action URL name #}
-<form method="POST" action="{% url 'save_match_availability' activity_type=activity_type %}">
-    {% csrf_token %}
-    <div class="form-group">
-        <label for="booking_type">Booking Type:</label>
-        <select name="booking_type" id="booking_type" disabled>
-            <option value="pool" {% if activity_type == 'pool' %}selected{% endif %}>Pool</option>
-            <option value="switch" {% if activity_type == 'switch' %}selected{% endif %}>Nintendo Switch</option>
-            <option value="table_tennis" {% if activity_type == 'table_tennis' %}selected{% endif %}>Table Tennis</option>
-        </select>
-        <input type="hidden" name="booking_type" value="{{ activity_type }}">
-    </div>
-    <div class="form-group">
-        <label for="start_time">Start Time:</label>
-        <input type="datetime-local" name="start_time" id="start_time" required>
-    </div>
-    <div class="form-group">
-        <label for="end_time">End Time:</label>
-        <input type="datetime-local" name="end_time" id="end_time" required>
-    </div>
-    <div class="form-group">
-        {# Clarified label text #}
-        <label for="is_available">Is Available for Matches:</label>
-        <input type="checkbox" name="is_available" id="is_available" checked>
-    </div>
-    {# Changed button text #}
-    <button type="submit">Add New Match Availability</button>
-</form>
-
-{# Changed heading text #}
-<h2>Your Current Match Availability</h2>
-<div class="date-selector">
-    {# Changed label text #}
-    <label for="availability-date">View match availability for date:</label>
-    <input type="date" id="availability-date" value="{{ selected_date|default:today|date:'Y-m-d' }}">
-    {# Changed onclick function name #}
-    <button onclick="filterMatchAvailabilityByDate()">Filter</button>
-</div>
-
-<table class="timetable">
-    <thead>
-        <tr>
-            <th>Start Time</th>
-            <th>End Time</th>
-            <th>Status</th>
-            <th>Action</th>
-        </tr>
-    </thead>
-    <tbody id="availability-slots">
-        {# Changed loop variable #}
-        {% for availability in match_availabilities %}
-        {# Changed data attribute name for consistency, though not strictly required #}
-        <tr class="selectable" data-id="{{ availability.id }}" data-match-availability-id="{{ availability.id }}">
-            <td>{{ availability.start_time }}</td>
-            <td>{{ availability.end_time }}</td>
-            <td>{{ availability.is_available|yesno:"Available for Match,Not Available" }}</td>
-            <td>
-                {# Changed onclick function names and parameter #}
-                <button onclick="toggleMatchAvailability({{ availability.id }}, {{ availability.is_available|yesno:'true,false' }})">
-                    {{ availability.is_available|yesno:"Mark Unavailable,Mark Available" }}
-                </button>
-                {# Changed onclick function name and parameter #}
-                <button onclick="deleteMatchAvailability({{ availability.id }})">Delete</button>
-            </td>
-        </tr>
-        {% empty %}
-        <tr>
-            {# Changed empty message text #}
-            <td colspan="4">No match availability set for this activity on this date.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-{# Optional: Calendar view remains conceptually the same #}
-<div class="calendar-view">
-    <h3>Calendar View</h3>
-    <div class="calendar-grid">
-        </div>
-</div>
-
-{# Changed heading and paragraph text #}
-<h3>Drag to Select Match Available Time</h3>
-<p>Click and drag over the 15-minute slots below to select times you are available for a match.</p>
+{# Combined Grid #}
+<h3>Click to Select Available Times (08:00 - 23:45)</h3>
+<p>Green slots indicate your current availability. Click any slot between 08:00 and midnight to automatically add or remove your availability for that specific time.</p>
 
 <div class="time-selector">
+    {% csrf_token %} {# <--- ADD THIS LINE HERE #}
     <label for="selected-date">Date:</label>
-    <input type="date" id="selected-date" value="{{ today|date:'Y-m-d' }}">
+    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}">
 
     <div class="time-grid">
-        {% for hour in '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'|split:',' %}
+        {# Grid generation loop remains the same #}
+        {% for hour in '8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'|split:',' %}
             {% for minute in '00,15,30,45'|split:',' %}
-            <div class="time-slot" data-time="{{ hour }}:{{ minute }}">
-                {{ hour }}:{{ minute }}
-            </div>
+                {% with slot_time_str=hour|stringformat:"02s"|add:":"|add:minute %}
+                <div
+                    class="time-slot{% if slot_time_str in existing_availability_times %} selected-slot{% endif %}"
+                    data-time="{{ slot_time_str }}">
+                    {{ slot_time_str }}
+                </div>
+                {% endwith %}
             {% endfor %}
         {% endfor %}
     </div>
-
-    {# Changed button text and onclick function name #}
-    <button id="update-availability" onclick="updateMatchAvailability()">Set Selected Times as Match Available</button>
+    {# Save button removed #}
 </div>
 
+{# --- JavaScript Block (Keep as is from previous step) --- #}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    let isDragging = false;
-    let selectedSlots = [];
+    const timeGrid = document.querySelector('.time-grid');
+    // Ensure this query selector works now that {% csrf_token %} is added
+    const csrfTokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+    const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
 
-    function clearSelection() {
-        document.querySelectorAll('.time-slot').forEach(slot => {
-            slot.classList.remove('selected-slot');
-        });
-        selectedSlots = [];
+    if (!csrfToken) {
+        console.error("CSRF Token input field not found! Automatic saving will fail.");
+        // Optionally alert the user or disable clicking
     }
 
-    document.querySelectorAll('.time-slot').forEach(slot => {
-        slot.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            clearSelection();
-            slot.classList.add('selected-slot');
-            selectedSlots.push(slot.dataset.time);
-        });
+    if (timeGrid && csrfToken) { // Only add listener if grid and token are found
+        console.log("Time grid and CSRF token found. Adding auto-save click listener.");
+        timeGrid.addEventListener('click', function(event) {
+            const clickedSlot = event.target.closest('.time-slot');
+            if (clickedSlot) {
+                clickedSlot.classList.toggle('selected-slot');
+                const isNowSelected = clickedSlot.classList.contains('selected-slot');
+                const timeStr = clickedSlot.dataset.time;
+                const selectedDate = document.getElementById('selected-date').value;
+                const activityType = "{{ activity_type }}";
 
-        slot.addEventListener('mouseover', (e) => {
-            if (isDragging && !slot.classList.contains('selected-slot')) {
-                slot.classList.add('selected-slot');
-                selectedSlots.push(slot.dataset.time);
+                console.log(`Sending update: Slot ${timeStr}, Date ${selectedDate}, Activity ${activityType}, Selected: ${isNowSelected}`);
+
+                clickedSlot.style.opacity = '0.6';
+
+                fetch("{% url 'toggle_slot_availability' %}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken // Use the found token
+                    },
+                    body: JSON.stringify({
+                        time_slot: timeStr,
+                        selected_date: selectedDate,
+                        activity_type: activityType,
+                        is_selected: isNowSelected
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(errData => { throw new Error(errData.message || `Server error: ${response.status}`); })
+                           .catch(() => { throw new Error(`Server error: ${response.status} ${response.statusText}`); });
+                    }
+                    console.log(`Slot ${timeStr} update successful.`);
+                    return null;
+                })
+                .catch(error => {
+                    console.error("Error updating single slot:", error);
+                    alert(`Failed to save change for ${timeStr}: ${error.message}`);
+                    clickedSlot.classList.toggle('selected-slot'); // Revert visual state
+                })
+                .finally(() => {
+                     clickedSlot.style.opacity = '1';
+                });
             }
         });
-    });
-
-    document.addEventListener('mouseup', () => {
-        isDragging = false;
-    });
-
-    const startTimeInput = document.getElementById('start_time');
-    const endTimeInput = document.getElementById('end_time');
-
-    endTimeInput.addEventListener('change', function() {
-        if(startTimeInput.value && endTimeInput.value) {
-            const startTime = new Date(startTimeInput.value);
-            const endTime = new Date(endTimeInput.value);
-
-            if(endTime <= startTime) {
-                alert('End time must be after start time');
-                endTimeInput.value = '';
-            }
-
-            // Optional: Keep duration check or adjust if needed for match availability
-            const duration = (endTime - startTime) / (1000 * 60 * 60); // in hours
-            // if(duration > 2) { // Example check
-            //     alert('Match availability periods cannot exceed 2 hours');
-            //     endTimeInput.value = '';
-            // }
-        }
-    });
-
-    // Renamed global function
-    window.updateMatchAvailability = function() {
-        if (selectedSlots.length === 0) {
-            alert("No time slots selected.");
-            return;
-        }
-
-        const selectedDate = document.getElementById('selected-date').value;
-
-        // Changed fetch URL
-        fetch("/update-match-availability/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({
-                times: selectedSlots,
-                activity_type: "{{ activity_type }}",
-                selected_date: selectedDate
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            window.location.reload();
-        })
-        .catch(error => console.error("Error:", error));
-    };
-
-    // Renamed global function and parameter
-    window.toggleMatchAvailability = function(matchAvailabilityId, currentStatus) {
-        // Changed fetch URL and parameter name
-        fetch(`/toggle-match-availability/${matchAvailabilityId}/`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({
-                is_available: !currentStatus
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.success) {
-                window.location.reload();
-            } else {
-                alert(data.message || "An error occurred");
-            }
-        })
-        .catch(error => console.error("Error:", error));
-    };
-
-    // Renamed global function and parameter
-    window.deleteMatchAvailability = function(matchAvailabilityId) {
-        // Changed confirmation message text
-        if(confirm("Are you sure you want to delete this match availability slot?")) {
-            // Changed fetch URL and parameter name
-            fetch(`/delete-match-availability/${matchAvailabilityId}/`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if(data.success) {
-                    window.location.reload();
-                } else {
-                    alert(data.message || "An error occurred");
-                }
-            })
-            .catch(error => console.error("Error:", error));
-        }
-    };
-
-    // Renamed function and changed URL name
-    window.filterMatchAvailabilityByDate = function() {
-        const selectedDate = document.getElementById('availability-date').value;
-        // Changed URL name
-        window.location.href = `{% url 'match_availability' activity_type=activity_type %}?date=${selectedDate}`;
-    };
+    } else if (!timeGrid) {
+        console.error("ERROR: Time grid element (.time-grid) not found!");
+    }
+    // Date Filter Function remains the same
+    const dateInput = document.getElementById('selected-date');
+    if(dateInput) {
+        dateInput.addEventListener('change', function() {
+            const selectedDateValue = this.value;
+             window.location.href = `{% url 'match_availability' activity_type=activity_type %}?date=${selectedDateValue}`;
+        });
+    }
 });
 </script>
 
 <style>
-/* Styles remain the same */
+/* Styles for the time grid and selection (Keep as is) */
 .time-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
     gap: 5px;
     margin: 20px 0;
+    max-width: 600px; /* Adjust width as needed */
 }
 
 .time-slot {
-    padding: 8px;
+    padding: 8px 5px;
     text-align: center;
     border: 1px solid #ddd;
     cursor: pointer;
     background-color: #f9f9f9;
+    font-size: 0.9em;
+    border-radius: 3px;
+    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
+    user-select: none;
 }
 
 .time-slot:hover {
     background-color: #e9f7ff;
+    border-color: #aedcff;
 }
 
 .time-slot.selected-slot {
-    background-color: #cce5ff;
-    border-color: #007bff;
+    background-color: #d4edda; /* Light green */
+    border-color: #c3e6cb;
+    color: #155724;
+    font-weight: bold;
 }
 
+/* Other necessary styles */
 .error-message {
     color: red;
     padding: 10px;
@@ -288,8 +153,21 @@ document.addEventListener('DOMContentLoaded', function() {
     border-radius: 4px;
 }
 
-.date-selector {
+.time-selector { /* Container for date input and grid */
     margin: 15px 0;
 }
+.time-selector label {
+    margin-right: 5px;
+    font-weight: bold;
+}
+.time-selector input[type="date"] {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-right: 10px; /* Space between date and grid */
+}
+
+/* No need for #update-availability button styles */
+
 </style>
 {% endblock %}

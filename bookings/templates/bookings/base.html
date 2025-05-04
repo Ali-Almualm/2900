@@ -1,12 +1,31 @@
+{# templates/base.html or bookings/templates/bookings/base.html #}
+
 <html lang="en">
 <head>
     {% load static %}
-    <meta name="csrf-token" content="{{ csrf_token }}">
-    <p>CSRF Token Debug: {{ csrf_token }}</p>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# ... other head elements ... #}
     <title>{% block title %}BoockMe{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    {# --- Add style for username display --- #}
+    <style>
+        .user-welcome {
+            display: inline-block; /* Keep it on the same line */
+            margin-left: 15px; /* Add some space before it */
+            color: #555; /* Or your desired color */
+            font-weight: bold;
+        }
+        @media (max-width: 768px) { /* Optional: Stack below on smaller screens */
+             nav a, nav .user-welcome {
+                 display: block;
+                 margin: 5px 0;
+             }
+             nav .user-welcome {
+                 margin-left: 0; /* Reset margin for stacked view */
+                 border-top: 1px solid #eee; /* Optional separator */
+                 padding-top: 5px;
+             }
+        }
+    </style>
 </head>
 <body>
     <header>
@@ -16,28 +35,33 @@
             <a href="{% url 'pool' %}">Pool</a> |
             <a href="{% url 'switch' %}">Nintendo Switch</a> |
             <a href="{% url 'table_tennis' %}">Table Tennis</a> |
-            
+
             {% if user.is_authenticated %}
                 <a href="{% url 'select_match_availability_activity' %}">Set Match Availability</a> |
                 <a href="{% url 'find_matches' activity_type='pool' %}">Find Matches</a> |
                 <a href="{% url 'create_competition' %}">Create Competition</a> |
                 <a href="{% url 'match_history' %}">Match History</a> |
                 <a href="{% url 'logout' %}">Logout</a>
+
+                {# --- ADDED USERNAME DISPLAY --- #}
+                <span class="user-welcome">Welcome, {{ user.username }}!</span>
+                {# --- END USERNAME DISPLAY --- #}
+
             {% else %}
                 <a href="{% url 'login' %}">Login</a> |
                 <a href="{% url 'register' %}">Register</a>
             {% endif %}
-            
+
             {% if user.is_staff %}
-                <a href="{% url 'admin:index' %}">Admin</a>
+                 | <a href="{% url 'admin:index' %}">Admin</a> {# Added separator #}
             {% endif %}
         </nav>
     </header>
-    
+
     <main>
         {% block content %}{% endblock %}
     </main>
-    
+
     <footer>
         <p>&copy; {% now "Y" %} BookMe - Activity Booking System</p>
     </footer>

@@ -1,12 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import logout, login, authenticate
 import json
 from django.forms import modelformset_factory # Import formset factory
 from django import forms
 from django.http import JsonResponse
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from django.contrib import messages
 from django.urls import reverse # For redirects
 
@@ -89,21 +89,31 @@ def cancel_booking(request, booking_id):
 
 
 def index(request):
-    date_str = request.GET.get('date', datetime.today().strftime('%Y-%m-%d'))
-    selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    # --- Date Calculation ---
+    today_date = date.today()
+    date_str = request.GET.get('date', today_date.strftime('%Y-%m-%d'))
+    try:
+        selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        selected_date = today_date # Default to today if date format is invalid
+
+    previous_date = selected_date - timedelta(days=1)
+    next_date = selected_date + timedelta(days=1)
+    # --- End Date Calculation ---
 
     time_slots = []
-    start_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
-    end_time = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
+    # Use selected_date which is now guaranteed to be a date object
+    start_time_dt = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
+    end_time_dt = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
 
-    current = start_time
-    while current < end_time:
+    current = start_time_dt
+    while current < end_time_dt:
         slot_end = current + timedelta(minutes=15)
-        time_slots.append((current, slot_end)) # Store datetime objects
+        time_slots.append((current, slot_end))
         current = slot_end
 
     bookings = Booking.objects.filter(start_time__date=selected_date)
-    competitions = Competition.objects.filter(start_time__date=selected_date) # Fetch competitions
+    competitions = Competition.objects.filter(start_time__date=selected_date)
 
     ACTIVITY_TYPES = ["pool", "switch", "table_tennis"]
     timetable_by_activity = {activity: [] for activity in ACTIVITY_TYPES}
@@ -114,19 +124,22 @@ def index(request):
         for activity in ACTIVITY_TYPES:
             slot_info = {
                 "time_slot": time_slot_str,
-                "start_datetime": slot_start_time, # Keep for potential use
+                "start_datetime": slot_start_time,
                 "status": "Available",
                 "details": None,
-                "type": "available", # 'available', 'booked', 'competition'
+                "type": "available",
                 "competition_id": None,
                 "can_join_competition": False,
                 "is_full": False,
                 "booked_by_user": False,
                 "booking_id": None,
                 "user_id": None,
+                "name": "-", # Initialize name
+                 # Add flags needed for template logic
+                "user_joined": False,
+                "is_creator": False,
             }
 
-            # 1. Check for Competitions first (they might override bookings in display)
             competition_entry = competitions.filter(
                 activity_type=activity,
                 start_time__lt=slot_end_time,
@@ -134,17 +147,24 @@ def index(request):
             ).first()
 
             if competition_entry:
+                user_is_participant = False
+                user_is_creator = False
+                if request.user.is_authenticated:
+                    user_is_participant = competition_entry.participants.filter(user=request.user).exists()
+                    user_is_creator = (request.user == competition_entry.creator)
+
                 slot_info.update({
                     "status": "Competition",
                     "details": f"Max: {competition_entry.max_joiners}, Joined: {competition_entry.participants.count()}",
                     "type": "competition",
                     "competition_id": competition_entry.id,
                     "is_full": competition_entry.is_full(),
-                    "can_join_competition": request.user.is_authenticated and competition_entry.can_join(request.user),
-                    "name": f"Comp by {competition_entry.creator.username}" # Indicate creator
+                    "can_join_competition": request.user.is_authenticated and not user_is_creator and not user_is_participant and not competition_entry.is_full(),
+                    "name": f"Comp by {competition_entry.creator.username}",
+                    "user_joined": user_is_participant, # Pass this flag
+                    "is_creator": user_is_creator,   # Pass this flag
                 })
             else:
-                # 2. Check for Bookings if no competition
                 booked_entry = bookings.filter(
                     booking_type=activity,
                     start_time__lt=slot_end_time,
@@ -165,8 +185,11 @@ def index(request):
 
     return render(request, 'bookings/index.html', {
         "timetable_by_activity": timetable_by_activity,
-        "selected_date": selected_date,
-        "user": request.user # Ensure user is passed for template logic
+        "selected_date": selected_date, # Pass date object
+        "previous_date": previous_date.strftime('%Y-%m-%d'), # Pass formatted string
+        "next_date": next_date.strftime('%Y-%m-%d'),       # Pass formatted string
+        "today_date": today_date.strftime('%Y-%m-%d'),     # Pass formatted string for Today button
+        "user": request.user
     })
 
 
@@ -189,73 +212,125 @@ def select_match_availability_activity_view(request):
 @login_required
 def match_availability_view(request, activity_type):
     # Get selected date or default to today
-    date_str = request.GET.get('date', date.today().strftime('%Y-%m-%d'))
-    selected_date = date.fromisoformat(date_str) # More robust date parsing
+    today_dt = date.today() # Use consistent naming
+    date_str = request.GET.get('date', today_dt.strftime('%Y-%m-%d'))
+    try:
+        selected_date_dt = date.fromisoformat(date_str)
+    except ValueError:
+        selected_date_dt = today_dt # Default to today if format is invalid
 
-    # Filter availabilities by the selected date and user
-    availabilities = MatchAvailability.objects.filter(
+    # --- Get Existing Availability Times ---
+    # Fetch records for the specific user, activity, and selected date
+    existing_availabilities = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
-        start_time__date=selected_date
-    ).order_by('start_time')
+        start_time__date=selected_date_dt
+    ).order_by('start_time') # Ordering is good practice but not essential for the set
+
+    # Create a set of "HH:MM" strings for existing slots
+    existing_times_set = set()
+    for avail in existing_availabilities:
+        # Add the start time formatted as HH:MM
+        existing_times_set.add(avail.start_time.strftime("%H:%M"))
+        # Note: This assumes availability is always in 15-min blocks matching the grid.
+        # If availability could span multiple slots, more complex logic would be needed
+        # to add all covered 15-min intervals to the set.
+        # For now, we assume a 1-to-1 match between saved records and grid slots.
+    # --- End Get Existing Times ---
+
+
+    # The form is no longer needed here as it was removed from the template
+    # form = MatchAvailabilityForm(initial={'booking_type': activity_type})
 
     return render(request, 'bookings/match_availability.html', {
         'activity_type': activity_type,
-        'match_availabilities': availabilities,
-        'form': MatchAvailabilityForm(initial={'booking_type': activity_type}),
-        'today': date.today(), # Add today's date to the context
-        'selected_date': selected_date # Pass the selected date as well
+        # 'match_availabilities': existing_availabilities, # No longer needed for the table
+        'existing_availability_times': existing_times_set, # Pass the set of HH:MM strings
+        'today': today_dt, # Pass today's date object
+        'selected_date': selected_date_dt # Pass the selected date object
     })
 
 
 @login_required
-@csrf_exempt
+@csrf_exempt # Consider removing csrf_exempt if using proper CSRF handling in JS fetch headers
+@transaction.atomic # Wrap the whole operation in a transaction
 def update_match_availability(request):
     if request.method == 'POST':
-        data = json.loads(request.body)
-        selected_times = data.get('times', [])
-        activity_type = data.get('activity_type')
-        selected_date = data.get('selected_date')
-        
-        if not activity_type or not selected_date:
-            return JsonResponse({"message": "Missing activity type or date"}, status=400)
-            
-        selected_date = datetime.strptime(selected_date, '%Y-%m-%d').date()
-        
-        # Convert time strings to datetime objects
-        availability_objects = []
-        for time_str in selected_times:
+        try:
+            data = json.loads(request.body)
+            selected_times = data.get('times', []) # List of "HH:MM" strings
+            activity_type = data.get('activity_type')
+            selected_date_str = data.get('selected_date')
+
+            if not activity_type or not selected_date_str:
+                return JsonResponse({"message": "Missing activity type or date parameter."}, status=400)
+
+            # --- Validate and Parse Inputs ---
             try:
-                # Assuming time_str is like "09:00"
-                hours, minutes = map(int, time_str.split(':'))
-                start_time = datetime.combine(selected_date, datetime.min.time()).replace(
-                    hour=hours, minute=minutes
-                )
-                end_time = start_time + timedelta(minutes=15)
-                
-                # Create or update availability
-                availability, created = MatchAvailability.objects.get_or_create(
-                    user=request.user,
-                    booking_type=activity_type,
-                    start_time=start_time,
-                    end_time=end_time,
-                    defaults={'is_available': True}
-                )
-                
-                if not created:
-                    availability.is_available = True
-                    availability.save()
-                    
-                availability_objects.append(availability)
-            except Exception as e:
-                return JsonResponse({"message": f"Error processing time: {str(e)}"}, status=400)
-                
-        return JsonResponse({
-            "message": f"Successfully updated {len(availability_objects)} availability slots",
-            "count": len(availability_objects)
-        })
-        
-    return JsonResponse({"message": "Invalid request method"}, status=400)
+                selected_date = date.fromisoformat(selected_date_str)
+            except ValueError:
+                return JsonResponse({"message": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+            if activity_type not in [choice[0] for choice in MatchAvailability._meta.get_field('booking_type').choices]:
+                 return JsonResponse({"message": "Invalid activity type."}, status=400)
+
+            # --- Sync Logic ---
+            # 1. Delete existing availability for this user, activity, and date
+            num_deleted, _ = MatchAvailability.objects.filter(
+                user=request.user,
+                booking_type=activity_type,
+                start_time__date=selected_date
+            ).delete()
+            print(f"DEBUG: Deleted {num_deleted} existing availability slots for {request.user.username} on {selected_date_str} for {activity_type}.") # Debugging
+
+            # 2. Create new availability records for the submitted times
+            created_count = 0
+            for time_str in selected_times:
+                try:
+                    # Parse "HH:MM" string
+                    hours, minutes = map(int, time_str.split(':'))
+                    slot_start_time = time(hour=hours, minute=minutes)
+
+                    # Combine date and time, ensure timezone awareness if needed (based on settings.USE_TZ)
+                    # For simplicity, assuming naive datetimes or consistent handling elsewhere
+                    start_datetime = datetime.combine(selected_date, slot_start_time)
+                    end_datetime = start_datetime + timedelta(minutes=15) # Calculate end time
+
+                    # Create the new record
+                    MatchAvailability.objects.create(
+                        user=request.user,
+                        booking_type=activity_type,
+                        start_time=start_datetime,
+                        end_time=end_datetime,
+                        is_available=True # Default to available when setting
+                    )
+                    created_count += 1
+                except (ValueError, TypeError) as parse_error:
+                    # Log error if a time string is invalid, but maybe continue?
+                    print(f"Warning: Could not parse time string '{time_str}': {parse_error}")
+                    # Optionally, you could stop and return an error here
+                    # return JsonResponse({"message": f"Invalid time format submitted: {time_str}"}, status=400)
+                    continue # Skip this invalid time string
+
+            print(f"DEBUG: Created {created_count} new availability slots.") # Debugging
+
+            # --- Return Success Response ---
+            return JsonResponse({
+                "message": f"Availability updated successfully for {selected_date_str}. ({created_count} slots set)"
+            })
+
+        # Handle potential errors during JSON parsing or database operations
+        except json.JSONDecodeError:
+            return JsonResponse({"message": "Invalid JSON format in request body."}, status=400)
+        except Exception as e:
+            # Log the full error for debugging on the server
+            print(f"!!! Unexpected Error in update_match_availability: {type(e).__name__} - {e}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"message": "An unexpected server error occurred while updating availability."}, status=500)
+
+    # Handle non-POST requests
+    return JsonResponse({"message": "Invalid request method. Use POST."}, status=405) # Method Not Allowed
 
 # Add these functions to your views.py file
 
@@ -803,26 +878,34 @@ def join_competition(request, competition_id):
         if competition.is_full():
             return JsonResponse({'success': False, 'message': 'This competition is already full.'}, status=400)
 
-        # Check for time conflicts with user's existing bookings/competitions (optional but good)
+        # --- UPDATED Conflict Check ---
+        # Check for time conflicts: User is creator OR opponent in a Booking
         user_bookings = Booking.objects.filter(
-            user_id=str(user.id), # Assuming user_id is string in Booking model
-            start_time__lt=competition.end_time,
-            end_time__gt=competition.start_time
+            Q(user_id=str(user.id)) | Q(opponent=user), # Use Q object to check both fields
+            start_time__lt=competition.end_time,    # Booking starts before Comp ends
+            end_time__gt=competition.start_time     # Booking ends after Comp starts
         )
+
+        # Check for conflicts: User is participant in another Competition
         user_competitions = CompetitionParticipant.objects.filter(
             user=user,
             competition__start_time__lt=competition.end_time,
             competition__end_time__gt=competition.start_time
-        ).exclude(competition=competition) # Don't compare with itself
+        ).exclude(competition=competition) # Don't compare with the one being joined
 
         if user_bookings.exists() or user_competitions.exists():
-             return JsonResponse({'success': False, 'message': 'You have a time conflict with this competition.'}, status=400)
+             # Determine which type of conflict occurred for a potentially clearer message
+             conflict_type = "booking" if user_bookings.exists() else "another competition"
+             # Optional: Add more details like the time of the conflict if needed
+             print(f"DEBUG: Join conflict for user {user.username} joining comp {competition_id}. Conflict with {conflict_type}.") # Debugging
+             return JsonResponse({'success': False, 'message': f'You have a time conflict with this competition (due to an existing {conflict_type}).'}, status=400)
+        # --- End UPDATED Conflict Check ---
 
-
-        # Join the competition
+        # If no conflicts, join the competition
         CompetitionParticipant.objects.create(competition=competition, user=user)
         return JsonResponse({'success': True, 'message': 'Successfully joined the competition!'})
 
+    # If not POST method
     return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
 
 @login_required
@@ -1532,3 +1615,79 @@ def enter_match_results(request, match_id):
     }
     print("--- Rendering template... ---") # DEBUG
     return render(request, 'bookings/enter_match_results.html', context)
+
+
+@login_required
+@require_POST # Ensure this view only accepts POST requests
+@csrf_exempt # Or handle CSRF token properly
+@transaction.atomic # Good practice for DB modifications
+def toggle_slot_availability(request):
+    try:
+        data = json.loads(request.body)
+        time_slot_str = data.get('time_slot') # "HH:MM"
+        selected_date_str = data.get('selected_date') # "YYYY-MM-DD"
+        activity_type = data.get('activity_type')
+        is_selected = data.get('is_selected') # boolean: true if adding, false if removing
+
+        # --- Basic Input Validation ---
+        if not all([time_slot_str, selected_date_str, activity_type, isinstance(is_selected, bool)]):
+            return JsonResponse({"message": "Missing required parameters (time_slot, selected_date, activity_type, is_selected)."}, status=400)
+
+        try:
+            selected_date = date.fromisoformat(selected_date_str)
+            hours, minutes = map(int, time_slot_str.split(':'))
+            slot_start_time = time(hour=hours, minute=minutes)
+            # Optional: Validate time is within allowed range (08:00 - 23:45)
+            if not (8 <= hours <= 23):
+                 raise ValueError("Time slot outside allowed range (08:00-23:45)")
+
+        except (ValueError, TypeError) as e:
+             return JsonResponse({"message": f"Invalid date or time format: {e}"}, status=400)
+
+        if activity_type not in [choice[0] for choice in MatchAvailability._meta.get_field('booking_type').choices]:
+             return JsonResponse({"message": "Invalid activity type."}, status=400)
+        # --- End Validation ---
+
+        # Calculate datetime objects
+        start_datetime = datetime.combine(selected_date, slot_start_time)
+        end_datetime = start_datetime + timedelta(minutes=15)
+
+        if is_selected:
+            # User wants to ADD or ensure this slot is available
+            obj, created = MatchAvailability.objects.update_or_create(
+                user=request.user,
+                booking_type=activity_type,
+                start_time=start_datetime,
+                # Also match end_time in filter for update_or_create robustness? Depends on uniqueness.
+                # Assuming start_time/user/activity is unique enough for a 15-min slot.
+                defaults={
+                    'end_time': end_datetime,
+                    'is_available': True # Ensure it's marked available
+                }
+            )
+            action = "created" if created else "updated (already existed)"
+            print(f"DEBUG: Availability slot {action} for {request.user.username} at {start_datetime}")
+
+        else:
+            # User wants to REMOVE availability for this slot
+            deleted_count, _ = MatchAvailability.objects.filter(
+                user=request.user,
+                booking_type=activity_type,
+                start_time=start_datetime,
+                # Optionally match end_time too for safety
+                # end_time=end_datetime
+            ).delete()
+            action = "deleted" if deleted_count > 0 else "not found (already deleted)"
+            print(f"DEBUG: Availability slot {action} for {request.user.username} at {start_datetime}")
+
+        # Send success response
+        return JsonResponse({"success": True, "message": f"Availability {action}."})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"message": "Invalid JSON format."}, status=400)
+    except Exception as e:
+        # Log the full error for debugging
+        print(f"!!! Error in toggle_slot_availability: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"message": "An unexpected server error occurred."}, status=500)

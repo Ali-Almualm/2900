@@ -25,6 +25,7 @@ urlpatterns = [
     # Renamed path, parameter, view function, and URL name
     path('delete-match-availability/<int:match_availability_id>/', views.delete_match_availability, name='delete_match_availability'),
     # --- End Renamed URLs ---
+    path('api/toggle-slot-availability/', views.toggle_slot_availability, name='toggle_slot_availability'), # New URL
 
     path('logout/', views.logout_view, name='logout'),
     # find_matches URL remains, as it finds matches based on the (now renamed) MatchAvailability

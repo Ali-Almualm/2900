@@ -5,52 +5,70 @@
 {% block content %}
     <h2>Timetable (15-Minute Slots)</h2>
 
-    <label for="selected-date">Select Date:</label>
-    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
+    {# --- Date Selector (Keep as is) --- #}
+    <div class="date-selector" style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;"> {# Use flexbox for alignment #}
+        {# Previous Day Button #}
+        <a href="{% url 'index' %}?date={{ previous_date }}" class="button date-nav-button">&lt; Prev</a>
 
+        {# Date Input #}
+        <div> {# Wrap label and input for better control if needed #}
+            <label for="selected-date" style="margin-right: 5px;">Select Date:</label>
+            <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
+        </div>
 
-    <div class="timetable-container">
+        {# Today Button #}
+        {# Only show Today button if selected date is not today #}
+        {% if selected_date|date:'Y-m-d' != today_date %}
+            <a href="{% url 'index' %}?date={{ today_date }}" class="button date-nav-button">Today</a>
+        {% endif %}
+
+        {# Next Day Button #}
+        <a href="{% url 'index' %}?date={{ next_date }}" class="button date-nav-button">Next &gt;</a>
+    </div>
+
+    {# --- NEW: Tab Navigation --- #}
+    <div class="tab-navigation">
+        {# Add 'active' class to the default tab link #}
+        <button class="tab-link active" data-target="pool-pane">Pool</button>
+        <button class="tab-link" data-target="switch-pane">Nintendo Switch</button>
+        <button class="tab-link" data-target="table_tennis-pane">Table Tennis</button>
+        {# Optional: Add "My Schedule" tab here later #}
+    </div>
+
+    {# --- NEW: Tab Content Panes --- #}
+    <div class="tab-content">
+        {# Loop through activities provided by the view context #}
         {% for activity, slots in timetable_by_activity.items %}
-            <div class="activity-container">
-                <button onclick="toggleActivity('{{ activity }}')">
-                    Show/Hide {% if activity == "pool" %}Pool
+            {# Apply 'active' class directly based on comparison #}
+            <div id="{{ activity }}-pane" class="tab-pane{% if activity == 'pool' %} active{% endif %}"> {# <--- CORRECTED LINE #}
+                {# Keep the existing table structure inside the pane #}
+                <h3>
+                    {% if activity == "pool" %}Pool
                     {% elif activity == "switch" %}Nintendo Switch
                     {% elif activity == "table_tennis" %}Table Tennis
                     {% endif %}
-                </button>
-
-                <div id="timetable-{{ activity }}" class="timetable" style="display: none;">
-                    <h3>
-                        {% if activity == "pool" %}Pool
-                        {% elif activity == "switch" %}Nintendo Switch
-                        {% elif activity == "table_tennis" %}Table Tennis
-                        {% endif %}
-                    </h3>
-                    <table>
-                        <thead> {# Added thead for structure #}
+                </h3>
+                <div class="table-wrapper"> {# Add wrapper for potential horizontal scroll #}
+                    <table class="timetable">
+                        <thead>
                             <tr>
                                 <th>Time Slot</th>
                                 <th>Status</th>
-                                <th>Booked By / Comp Details</th> {# Changed Header #}
+                                <th>Booked By / Comp Details</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
-                        <tbody> {# Added tbody for structure #}
+                        <tbody>
                             {% for slot in slots %}
-                            {# Updated class based on slot type #}
                             <tr class="{% if slot.type == 'available' %}clickable{% elif slot.type == 'competition' %}competition-slot{% endif %}"
                                 data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
 
                                 <td>{{ slot.time_slot }}</td>
-
-                                {# Updated Status Cell #}
                                 <td {% if slot.type == "booked" %} style="color: red;"
                                     {% elif slot.type == "competition" %} style="color: blue;"
                                     {% else %} style="color: green;" {% endif %}>
                                     {{ slot.status }}
                                 </td>
-
-                                {# Updated Details/Name Cell #}
                                 <td>
                                     {% if slot.type == 'competition' %}
                                          <small>By: {{ slot.name|default:'-' }} ({{ slot.details }})</small>
@@ -58,26 +76,19 @@
                                         {{ slot.name|default:"-" }}
                                     {% endif %}
                                 </td>
-
-                                {# Updated Action Cell #}
                                 <td>
-                                    {# --- Existing logic for booked slots --- #}
+                                    {# Action logic remains the same as before #}
                                     {% if slot.type == "booked" and slot.booked_by_user %}
                                         <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel Booking</button>
-                                
-                                    {# --- Modify the Competition Logic --- #}
                                     {% elif slot.type == "competition" %}
-                                        {# Add the Details Link/Button FIRST #}
-                                        <a href="{% url 'competition_detail' competition_id=slot.competition_id %}" class="button button-small button-info">Details</a> {# <--- ADD THIS LINK #}
-                                
-                                        {# Keep existing join/leave/status logic below the details button #}
+                                        <a href="{% url 'competition_detail' competition_id=slot.competition_id %}" class="button button-small button-info">Details</a>
                                         {% if user.is_authenticated %}
                                             {% if slot.is_creator %}
                                                 <span style="color: gray; font-weight: bold; margin-left: 5px;">Creator</span>
                                             {% elif slot.user_joined %}
-                                                <button onclick="leaveCompetition('{{ slot.competition_id }}')" style="background-color: #dc3545; margin-left: 5px;">Leave Competition</button>
+                                                <button onclick="leaveCompetition('{{ slot.competition_id }}')" class="button button-small button-danger" style="margin-left: 5px;">Leave</button> {# Added class #}
                                             {% elif slot.can_join_competition %}
-                                                <button onclick="joinCompetition('{{ slot.competition_id }}')" style="margin-left: 5px;">Join Competition</button>
+                                                <button onclick="joinCompetition('{{ slot.competition_id }}')" class="button button-small button-success" style="margin-left: 5px;">Join</button> {# Added class #}
                                             {% elif slot.is_full %}
                                                 <span style="color: orange; font-weight: bold; margin-left: 5px;">Full</span>
                                             {% else %}
@@ -86,8 +97,6 @@
                                         {% else %}
                                              <span style="margin-left: 5px;"><a href="{% url 'login' %}?next={{ request.path }}">Login to Join/View</a></span>
                                         {% endif %}
-                                
-                                    {# --- Existing logic for available slots --- #}
                                     {% elif slot.type == "available" %}
                                         {% if user.is_authenticated %}
                                             <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
@@ -102,14 +111,15 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                </div>
-            </div>
+                </div> {# End table-wrapper #}
+            </div> {# End tab-pane #}
+            {# No need for {% endwith %} here anymore #}
         {% endfor %}
-    </div>
+    </div> {# End tab-content #}
 
-
+    {# --- Booking Modal (Keep as is) --- #}
     {% if user.is_authenticated %}
-    <div id="booking-overlay" class="overlay" style="display: none;"> {# Ensure initial display is none #}
+    <div id="booking-overlay" class="overlay" style="display: none;">
         <div class="overlay-content">
             <span class="close" onclick="closeBookingForm()">&times;</span>
             <h2>Book Time Slot</h2>
@@ -119,83 +129,67 @@
                     <label for="selected-date-display">Selected Date:</label>
                     <input type="text" id="selected-date-display" name="booking_date" readonly>
                 </div>
-
                 <div class="form-group">
                     <label for="selected-time">Selected Time:</label>
                     <input type="text" id="selected-time" name="start_time" readonly>
                 </div>
-
                 <div class="form-group">
                     <label for="username">Username:</label>
                     <input type="text" id="username" name="username" value="{{ user.username }}" readonly>
                 </div>
-
                 <div class="form-group">
-                    <label for="name">Name:</label> {# Keep name field if your Booking model requires it #}
+                    <label for="name">Name:</label>
                     <input type="text" id="name" name="name" value="{{ user.username }}" readonly>
                 </div>
-
                 <div class="form-group">
                     <label for="booking_type">Activity:</label>
                     <input type="text" id="booking_type" name="booking_type" readonly>
                 </div>
-
                 <button type="submit">Book Slot</button>
             </form>
         </div>
     </div>
     {% endif %}
 
+    {# --- JavaScript for Tabs and other functions (Keep existing JS, add tab logic) --- #}
     <script>
+        // --- Existing Functions (Keep these) ---
         function changeDate() {
             let selectedDate = document.getElementById("selected-date").value;
-            console.log("📆 Selected Date from Calendar:", selectedDate); // Debugging
             window.location.href = "?date=" + selectedDate;
         }
 
         function openBookingForm(timeSlot, dateSlot, activity) {
-            // Ensure the date format matches what the view expects if needed,
-            // but reading from the input value is usually fine.
             document.getElementById("selected-time").value = timeSlot;
-            document.getElementById("selected-date-display").value = dateSlot; // Use passed date
+            document.getElementById("selected-date-display").value = dateSlot;
             document.getElementById("booking_type").value = activity;
             document.getElementById("booking-overlay").style.display = "flex";
         }
 
         function closeBookingForm() {
             document.getElementById("booking-overlay").style.display = "none";
-            // No need to reset form if values are set dynamically in openBookingForm
-            // document.getElementById("booking-form").reset();
         }
 
-        // Ensure the booking form exists before adding listener
         const bookingForm = document.getElementById("booking-form");
         if (bookingForm) {
             bookingForm.addEventListener("submit", function (event) {
                 event.preventDefault();
-                // Get date from the form field which was populated by openBookingForm
                 const formData = new FormData(this);
-
-                // Convert FormData to JSON object
                 let bookingData = {};
                 formData.forEach((value, key) => bookingData[key] = value);
 
-                // Make sure the date is included correctly
-                // If 'booking_date' isn't being set correctly, uncomment and adjust:
-                // bookingData['booking_date'] = document.getElementById("selected-date-display").value;
-
-                fetch("{% url 'api_book' %}", {
+                fetch("{% url 'api_book' %}", { // Ensure CSRF token is handled if needed
                     method: "POST",
                     headers: {
-                        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify(bookingData) // Send JSON data
+                    body: JSON.stringify(bookingData)
                 })
                 .then(response => response.json())
                 .then(data => {
                     alert(data.message);
-                    if(data.message.includes("created")) { // Basic check for success
+                    if(data.message.includes("created")) {
                          closeBookingForm();
                          location.reload();
                     }
@@ -207,28 +201,19 @@
             });
         }
 
-
-        function toggleActivity(activity) {
-            let timetable = document.getElementById("timetable-" + activity);
-            timetable.style.display = timetable.style.display === "none" ? "block" : "none";
-        }
-
-        function cancelBooking(bookingId, userId) {
-             if (!confirm("Are you sure you want to cancel this booking?")) {
-                return;
-            }
+        function cancelBooking(bookingId, userId) { // Ensure userId is passed if needed by view logic
+             if (!confirm("Are you sure you want to cancel this booking?")) return;
             fetch(`/cancel/${bookingId}/`, {
                 method: "POST",
                 headers: {
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
                     "Content-Type": "application/json"
                 }
-                 // No body needed if ID is in URL and request is POST
             })
             .then(response => response.json())
             .then(data => {
                 alert(data.message);
-                 if(data.message.includes("cancelled")) { // Basic check for success
+                 if(data.message.includes("cancelled")) {
                      location.reload();
                  }
             })
@@ -237,24 +222,21 @@
                  alert("An error occurred cancelling the booking.");
             });
         }
-        // --- Function to Leave Competition ---
+
         function leaveCompetition(competitionId) {
-            if (!confirm("Are you sure you want to leave this competition?")) {
-                return;
-            }
-            fetch(`/leave-competition/${competitionId}/`, { // Call the new URL
-                method: "POST", // Using POST as defined in the view
+             if (!confirm("Are you sure you want to leave this competition?")) return;
+            fetch(`/leave-competition/${competitionId}/`, {
+                method: "POST",
                 headers: {
                     "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
                     "Content-Type": "application/json"
                 },
-                // No body needed
             })
             .then(response => response.json())
             .then(data => {
-                alert(data.message); // Show success/error message
+                alert(data.message);
                 if(data.success) {
-                    location.reload(); // Reload to update button and participant count
+                    location.reload();
                 }
             })
             .catch(error => {
@@ -262,24 +244,21 @@
                 alert("An error occurred while trying to leave the competition.");
             });
         }
-        // --- Function to Join Competition ---
+
         function joinCompetition(competitionId) {
-            if (!confirm("Are you sure you want to join this competition?")) {
-                return;
-            }
+            if (!confirm("Are you sure you want to join this competition?")) return;
             fetch(`/join-competition/${competitionId}/`, {
                 method: "POST",
                 headers: {
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value, // Get CSRF token
+                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
                     "Content-Type": "application/json"
                 },
-                // No body needed for this simple join action if ID is in URL
             })
             .then(response => response.json())
             .then(data => {
-                alert(data.message); // Show success/error message
+                alert(data.message);
                 if(data.success) {
-                    location.reload(); // Reload to see updated participant count/status
+                    location.reload();
                 }
             })
             .catch(error => {
@@ -287,6 +266,31 @@
                 alert("An error occurred while trying to join the competition.");
             });
         }
+
+        // --- NEW: JavaScript for Tab Switching ---
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabLinks = document.querySelectorAll('.tab-link');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+
+            tabLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    const targetPaneId = this.getAttribute('data-target');
+
+                    // Remove active class from all links and panes
+                    tabLinks.forEach(l => l.classList.remove('active'));
+                    tabPanes.forEach(p => p.classList.remove('active'));
+
+                    // Add active class to the clicked link and target pane
+                    this.classList.add('active');
+                    const targetPane = document.getElementById(targetPaneId);
+                    if (targetPane) {
+                        targetPane.classList.add('active');
+                    }
+                });
+            });
+        });
+        // --- End Tab JS ---
+
     </script>
 
 {% endblock %}
