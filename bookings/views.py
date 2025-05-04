@@ -1691,3 +1691,31 @@ def toggle_slot_availability(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({"message": "An unexpected server error occurred."}, status=500)
+
+def leaderboard_view(request):
+    """Display the leaderboard sorted by activity ratings."""
+    # Get the sorting parameter from the request (default to 'pool_rating')
+    sort_by = request.GET.get('sort_by', 'pool_rating')
+  # Ensure the sorting parameter is valid
+    if sort_by not in ['ranking_pool', 'ranking_switch', 'ranking_table_tennis']:
+        # If invalid, default to 'pool_rating'
+            sort_by = 'ranking_pool'
+
+        # Fetch users and annotate with their ratings
+    leaderboard = User.objects.select_related('userprofile').order_by(f'-userprofile__{sort_by}')
+
+    return render(request, 'bookings/leaderboard.html', {
+            'leaderboard': leaderboard,
+            'sort_by': sort_by
+        })
+
+@login_required
+def profile_view(request):
+    """Display the profile and rankings of the logged-in user."""
+    user = request.user
+    userprofile = user.userprofile  # Assuming a UserProfile model exists
+
+    return render(request, 'bookings/profile.html', {
+        'user': user,
+        'userprofile': userprofile,
+    })

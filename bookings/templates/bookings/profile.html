@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+<h1>Your Profile</h1>
+
+<div class="profile-container">
+    <h2>Welcome, {{ user.username }}</h2>
+    <p>Email: {{ user.email }}</p>
+    <p>Date Joined: {{ user.date_joined|date:"M d, Y" }}</p>
+
+    <h3>Your Rankings</h3>
+    <table class="profile-table">
+        <thead>
+            <tr>
+                <th>Activity</th>
+                <th>Rating</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Pool</td>
+                <td>{{ userprofile.ranking_pool }}</td>
+            </tr>
+            <tr>
+                <td>Switch</td>
+                <td>{{ userprofile.ranking_switch }}</td>
+            </tr>
+            <tr>
+                <td>Table Tennis</td>
+                <td>{{ userprofile.ranking_table_tennis }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<style>
+/* Profile Page Styles */
+.profile-container {
+    margin: 20px 0;
+    font-size: 16px;
+}
+
+.profile-table {
+    width: 50%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    text-align: left;
+}
+
+.profile-table th, .profile-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+
+.profile-table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+}
+
+.profile-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.profile-table tr:hover {
+    background-color: #f1f1f1;
+}
+</style>
+{% endblock %}

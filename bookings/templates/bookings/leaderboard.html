@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Leaderboard{% endblock %}
+
+{% block content %}
+<h1>Leaderboard</h1>
+
+<!-- Sorting Options -->
+<div>
+    <p>Sort by:</p>
+    <a href="?sort_by=ranking_pool" {% if sort_by == 'ranking_pool' %}class="active-sort"{% endif %}>Pool Rating</a> |
+    <a href="?sort_by=ranking_switch" {% if sort_by == 'ranking_switch' %}class="active-sort"{% endif %}>Switch Rating</a> |
+    <a href="?sort_by=ranking_table_tennis" {% if sort_by == 'ranking_table_tennis' %}class="active-sort"{% endif %}>Table Tennis Rating</a>
+</div>
+
+<!-- Display Current Sorting -->
+<div>
+    <p>Currently sorted by: 
+        {% if sort_by == 'ranking_pool' %}
+            Pool Rating
+        {% elif sort_by == 'ranking_switch' %}
+            Switch Rating
+        {% elif sort_by == 'ranking_table_tennis' %}
+            Table Tennis Rating
+        {% else %}
+            Unknown
+        {% endif %}
+    </p>
+</div>
+
+<table class="leaderboard-table">
+    <thead>
+        <tr>
+            <th>Rank</th>
+            <th>Username</th>
+            {% if sort_by == 'ranking_pool' %}
+                <th>Pool Rating</th>
+            {% elif sort_by == 'ranking_switch' %}
+                <th>Switch Rating</th>
+            {% elif sort_by == 'ranking_table_tennis' %}
+                <th>Table Tennis Rating</th>
+            {% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in leaderboard %}
+        <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ user.username }}</td>
+            {% if sort_by == 'ranking_pool' %}
+                <td>{{ user.userprofile.ranking_pool }}</td>
+            {% elif sort_by == 'ranking_switch' %}
+                <td>{{ user.userprofile.ranking_switch }}</td>
+            {% elif sort_by == 'ranking_table_tennis' %}
+                <td>{{ user.userprofile.ranking_table_tennis }}</td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<style>
+/* Leaderboard Table */
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    text-align: left;
+}
+
+.leaderboard-table th, .leaderboard-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+
+.leaderboard-table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+}
+
+/* Set fixed column widths */
+.leaderboard-table th:nth-child(1), .leaderboard-table td:nth-child(1) {
+    width: 10%; /* Rank column */
+}
+
+.leaderboard-table th:nth-child(2), .leaderboard-table td:nth-child(2) {
+    width: 30%; /* Username column */
+}
+
+.leaderboard-table th:nth-child(3), .leaderboard-table td:nth-child(3) {
+    width: 20%; /* Rating column */
+}
+
+/* Alternate row colors */
+.leaderboard-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.leaderboard-table tr:hover {
+    background-color: #f1f1f1;
+}
+
+/* Active Sort Link */
+.active-sort {
+    font-weight: bold;
+    text-decoration: underline;
+}
+</style>
+{% endblock %}
