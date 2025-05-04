@@ -1461,3 +1461,22 @@ def enter_match_results(request, match_id):
     }
     print("--- Rendering template... ---") # DEBUG
     return render(request, 'bookings/enter_match_results.html', context)
+
+
+
+def leaderboard_view(request):
+    """Display the leaderboard sorted by activity ratings."""
+    # Get the sorting parameter from the request (default to 'pool_rating')
+    sort_by = request.GET.get('sort_by', 'pool_rating')
+  # Ensure the sorting parameter is valid
+    if sort_by not in ['ranking_pool', 'ranking_switch', 'ranking_table_tennis']:
+        # If invalid, default to 'pool_rating'
+            sort_by = 'ranking_pool'
+
+        # Fetch users and annotate with their ratings
+    leaderboard = User.objects.select_related('userprofile').order_by(f'-userprofile__{sort_by}')
+
+    return render(request, 'bookings/leaderboard.html', {
+            'leaderboard': leaderboard,
+            'sort_by': sort_by
+        })
