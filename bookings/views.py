@@ -289,7 +289,11 @@ def delete_match_availability(request, match_availability_id):
 
 @login_required
 def find_matches(request, activity_type):
-    """Find users who have matching availability for the given activity and handle pending requests."""
+    """
+    Find users who have matching availability for the given activity,
+    ensuring the overlapping slots are not already booked or part of a competition.
+    Also handles pending requests.
+    """
     user_profile = request.user.userprofile
 
     # Get the user's skill level for this activity
@@ -300,59 +304,93 @@ def find_matches(request, activity_type):
     elif activity_type == 'table_tennis':
         user_skill = user_profile.ranking_table_tennis
     else:
-        user_skill = 0
+        user_skill = 0 # Default or raise error?
 
     # Get the user's availability for this activity
     user_match_availability = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
         is_available=True
-    )
+    ).order_by('start_time') # Order for potentially cleaner overlap logic
 
     if not user_match_availability.exists():
+        # Fetch pending requests even if user has no availability set
+        pending_requests = BookingRequestmatch.objects.filter(
+            requested_player=request.user,
+            is_confirmed=False,
+            is_rejected=False
+        ).select_related('requester') # Optimize query
+
         return render(request, 'bookings/matches.html', {
             'activity_type': activity_type,
             'matches': [],
-            'pending_requests': [],
-            'error': 'You need to set your match availability before finding matches'
+            'pending_requests': pending_requests,
+            'error': 'You need to set your match availability before finding matches.'
         })
 
     # Find all other users with availability for this activity
-    matches = []
-    other_users = User.objects.exclude(id=request.user.id)
-
-    for other_user in other_users:
-        # Get their availability
-        other_match_availability = MatchAvailability.objects.filter(
-            user=other_user,
-            booking_type=activity_type,
-            is_available=True
+    potential_matches = []
+    # Exclude self and fetch related profiles and availability efficiently
+    other_users_with_availability = User.objects.exclude(id=request.user.id).prefetch_related(
+        'userprofile',
+        models.Prefetch(
+            'matchavailability_set',
+            queryset=MatchAvailability.objects.filter(booking_type=activity_type, is_available=True),
+            to_attr='filtered_availability'
         )
+    )
 
-        if not other_match_availability.exists():
-            continue
+    # Get *all* bookings and competitions for the relevant activity type upfront
+    # This is more efficient than querying inside the loop for each overlap
+    # Filter by date range if possible to reduce load (e.g., only check today/upcoming week)
+    all_bookings = Booking.objects.filter(booking_type=activity_type) # Add date filtering if needed
+    all_competitions = Competition.objects.filter(activity_type=activity_type) # Add date filtering if needed
 
-        # Check for overlapping availability
+
+    for other_user in other_users_with_availability:
+        # Access the prefetched availability
+        other_match_availability = getattr(other_user, 'filtered_availability', [])
+
+        if not other_match_availability:
+            continue # Skip user if they have no availability for this activity
+
         overlapping_times = []
 
         for user_slot in user_match_availability:
             for other_slot in other_match_availability:
-                # Check if times overlap
-                if (user_slot.start_time < other_slot.end_time and
-                        user_slot.end_time > other_slot.start_time):
+                # Check if user/other availability slots overlap
+                latest_start = max(user_slot.start_time, other_slot.start_time)
+                earliest_end = min(user_slot.end_time, other_slot.end_time)
 
-                    # Calculate the overlap period
-                    overlap_start = max(user_slot.start_time, other_slot.start_time)
-                    overlap_end = min(user_slot.end_time, other_slot.end_time)
+                if latest_start < earliest_end: # They overlap
+                    overlap_start = latest_start
+                    overlap_end = earliest_end
 
-                    overlapping_times.append({
-                        'start': overlap_start,
-                        'end': overlap_end,
-                        'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
-                    })
+                    # --- Check if this specific overlap period is already booked ---
+                    is_slot_booked = False
 
+                    # Check against Bookings
+                    if all_bookings.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
+                        is_slot_booked = True
+                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Booking.") # Optional Debug
+
+                    # Check against Competitions (only if not already found booked)
+                    if not is_slot_booked and all_competitions.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
+                        is_slot_booked = True
+                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Competition.") # Optional Debug
+
+                    # --- Only add the overlap if it's NOT booked ---
+                    if not is_slot_booked:
+                        overlapping_times.append({
+                            'start': overlap_start,
+                            'end': overlap_end,
+                            'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
+                        })
+                    # --- End check ---
+
+        # Only add the user to potential_matches if there are valid, available overlapping times
         if overlapping_times:
-            # Get other user's skill level
+            # Get other user's skill level from prefetched profile
             try:
                 other_profile = other_user.userprofile
                 if activity_type == 'pool':
@@ -362,35 +400,38 @@ def find_matches(request, activity_type):
                 elif activity_type == 'table_tennis':
                     other_skill = other_profile.ranking_table_tennis
                 else:
-                    other_skill = 0
+                    other_skill = 0 # Or handle appropriately
 
                 # Calculate skill difference
                 skill_difference = abs(user_skill - other_skill)
 
-                matches.append({
+                potential_matches.append({
                     'user': other_user,
-                    'overlapping_times': overlapping_times,
+                    'overlapping_times': overlapping_times, # This list now only contains available slots
                     'skill_level': other_skill,
                     'skill_difference': skill_difference
                 })
             except UserProfile.DoesNotExist:
+                # This shouldn't happen if the signal works, but good to handle
                 continue
 
     # Sort matches by skill difference (closer matches first)
-    matches.sort(key=lambda x: x['skill_difference'])
+    potential_matches.sort(key=lambda x: x['skill_difference'])
 
-    # Fetch pending match requests for the logged-in user
+    # Fetch pending match requests for the logged-in user (optimize query)
     pending_requests = BookingRequestmatch.objects.filter(
         requested_player=request.user,
         is_confirmed=False,
         is_rejected=False
-    )
+    ).select_related('requester') # Fetch requester info efficiently
 
     return render(request, 'bookings/matches.html', {
         'activity_type': activity_type,
-        'matches': matches,
-        'pending_requests': pending_requests
+        'matches': potential_matches, # Pass the filtered list
+        'pending_requests': pending_requests,
+        'error': None # Clear any previous error if availability exists now
     })
+
 
 @login_required
 def book(request):
