@@ -1551,3 +1551,17 @@ def leaderboard_view(request):
             'leaderboard': leaderboard,
             'sort_by': sort_by
         })
+
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def profile_view(request):
+    """Display the profile and rankings of the logged-in user."""
+    user = request.user
+    userprofile = user.userprofile  # Assuming a UserProfile model exists
+
+    return render(request, 'bookings/profile.html', {
+        'user': user,
+        'userprofile': userprofile,
+    })

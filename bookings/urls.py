@@ -47,4 +47,5 @@ urlpatterns = [
     path('match-history/', views.match_history_view, name='match_history'),
     path('confirm-result/<int:booking_id>/', views.confirm_result_view, name='confirm_result'),
     path('leaderboard/', views.leaderboard_view, name='leaderboard'),
+    path('profile/', views.profile_view, name='profile'),
 ]
