@@ -289,7 +289,11 @@ def delete_match_availability(request, match_availability_id):
 
 @login_required
 def find_matches(request, activity_type):
-    """Find users who have matching availability for the given activity and handle pending requests."""
+    """
+    Find users who have matching availability for the given activity,
+    ensuring the overlapping slots are not already booked or part of a competition.
+    Also handles pending requests.
+    """
     user_profile = request.user.userprofile
 
     # Get the user's skill level for this activity
@@ -300,59 +304,93 @@ def find_matches(request, activity_type):
     elif activity_type == 'table_tennis':
         user_skill = user_profile.ranking_table_tennis
     else:
-        user_skill = 0
+        user_skill = 0 # Default or raise error?
 
     # Get the user's availability for this activity
     user_match_availability = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
         is_available=True
-    )
+    ).order_by('start_time') # Order for potentially cleaner overlap logic
 
     if not user_match_availability.exists():
+        # Fetch pending requests even if user has no availability set
+        pending_requests = BookingRequestmatch.objects.filter(
+            requested_player=request.user,
+            is_confirmed=False,
+            is_rejected=False
+        ).select_related('requester') # Optimize query
+
         return render(request, 'bookings/matches.html', {
             'activity_type': activity_type,
             'matches': [],
-            'pending_requests': [],
-            'error': 'You need to set your match availability before finding matches'
+            'pending_requests': pending_requests,
+            'error': 'You need to set your match availability before finding matches.'
         })
 
     # Find all other users with availability for this activity
-    matches = []
-    other_users = User.objects.exclude(id=request.user.id)
-
-    for other_user in other_users:
-        # Get their availability
-        other_match_availability = MatchAvailability.objects.filter(
-            user=other_user,
-            booking_type=activity_type,
-            is_available=True
+    potential_matches = []
+    # Exclude self and fetch related profiles and availability efficiently
+    other_users_with_availability = User.objects.exclude(id=request.user.id).prefetch_related(
+        'userprofile',
+        models.Prefetch(
+            'matchavailability_set',
+            queryset=MatchAvailability.objects.filter(booking_type=activity_type, is_available=True),
+            to_attr='filtered_availability'
         )
+    )
 
-        if not other_match_availability.exists():
-            continue
+    # Get *all* bookings and competitions for the relevant activity type upfront
+    # This is more efficient than querying inside the loop for each overlap
+    # Filter by date range if possible to reduce load (e.g., only check today/upcoming week)
+    all_bookings = Booking.objects.filter(booking_type=activity_type) # Add date filtering if needed
+    all_competitions = Competition.objects.filter(activity_type=activity_type) # Add date filtering if needed
 
-        # Check for overlapping availability
+
+    for other_user in other_users_with_availability:
+        # Access the prefetched availability
+        other_match_availability = getattr(other_user, 'filtered_availability', [])
+
+        if not other_match_availability:
+            continue # Skip user if they have no availability for this activity
+
         overlapping_times = []
 
         for user_slot in user_match_availability:
             for other_slot in other_match_availability:
-                # Check if times overlap
-                if (user_slot.start_time < other_slot.end_time and
-                        user_slot.end_time > other_slot.start_time):
+                # Check if user/other availability slots overlap
+                latest_start = max(user_slot.start_time, other_slot.start_time)
+                earliest_end = min(user_slot.end_time, other_slot.end_time)
 
-                    # Calculate the overlap period
-                    overlap_start = max(user_slot.start_time, other_slot.start_time)
-                    overlap_end = min(user_slot.end_time, other_slot.end_time)
+                if latest_start < earliest_end: # They overlap
+                    overlap_start = latest_start
+                    overlap_end = earliest_end
 
-                    overlapping_times.append({
-                        'start': overlap_start,
-                        'end': overlap_end,
-                        'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
-                    })
+                    # --- Check if this specific overlap period is already booked ---
+                    is_slot_booked = False
 
+                    # Check against Bookings
+                    if all_bookings.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
+                        is_slot_booked = True
+                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Booking.") # Optional Debug
+
+                    # Check against Competitions (only if not already found booked)
+                    if not is_slot_booked and all_competitions.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
+                        is_slot_booked = True
+                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Competition.") # Optional Debug
+
+                    # --- Only add the overlap if it's NOT booked ---
+                    if not is_slot_booked:
+                        overlapping_times.append({
+                            'start': overlap_start,
+                            'end': overlap_end,
+                            'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
+                        })
+                    # --- End check ---
+
+        # Only add the user to potential_matches if there are valid, available overlapping times
         if overlapping_times:
-            # Get other user's skill level
+            # Get other user's skill level from prefetched profile
             try:
                 other_profile = other_user.userprofile
                 if activity_type == 'pool':
@@ -362,35 +400,38 @@ def find_matches(request, activity_type):
                 elif activity_type == 'table_tennis':
                     other_skill = other_profile.ranking_table_tennis
                 else:
-                    other_skill = 0
+                    other_skill = 0 # Or handle appropriately
 
                 # Calculate skill difference
                 skill_difference = abs(user_skill - other_skill)
 
-                matches.append({
+                potential_matches.append({
                     'user': other_user,
-                    'overlapping_times': overlapping_times,
+                    'overlapping_times': overlapping_times, # This list now only contains available slots
                     'skill_level': other_skill,
                     'skill_difference': skill_difference
                 })
             except UserProfile.DoesNotExist:
+                # This shouldn't happen if the signal works, but good to handle
                 continue
 
     # Sort matches by skill difference (closer matches first)
-    matches.sort(key=lambda x: x['skill_difference'])
+    potential_matches.sort(key=lambda x: x['skill_difference'])
 
-    # Fetch pending match requests for the logged-in user
+    # Fetch pending match requests for the logged-in user (optimize query)
     pending_requests = BookingRequestmatch.objects.filter(
         requested_player=request.user,
         is_confirmed=False,
         is_rejected=False
-    )
+    ).select_related('requester') # Fetch requester info efficiently
 
     return render(request, 'bookings/matches.html', {
         'activity_type': activity_type,
-        'matches': matches,
-        'pending_requests': pending_requests
+        'matches': potential_matches, # Pass the filtered list
+        'pending_requests': pending_requests,
+        'error': None # Clear any previous error if availability exists now
     })
+
 
 @login_required
 def book(request):
@@ -787,169 +828,199 @@ def join_competition(request, competition_id):
 @login_required
 def match_history_view(request):
     """Display the match history for the logged-in user."""
-    match_history = Booking.objects.filter(
-        models.Q(user_id=str(request.user.id)) | models.Q(opponent=request.user)
-    ).order_by('-start_time')
+    # Get matches where the user is creator (user_id) or opponent
+    match_history_qs = Booking.objects.filter(
+        Q(user_id=str(request.user.id)) | Q(opponent=request.user)
+    ).select_related('opponent').order_by('-start_time') # Include opponent user
 
-    # Debugging: Print match history to the console
-    print("Match History Queryset:")
-    for match in match_history:
-        print(f"Match ID: {match.id}, User ID: {match.user_id}, Opponent: {match.opponent}, User Result: {match.user_result}, Opponent Result: {match.opponent_result}")
+    # --- Fetch Creator Usernames ---
+    # 1. Collect valid creator IDs (handle potential non-integer user_id values)
+    creator_ids_str = set(match.user_id for match in match_history_qs)
+    creator_ids_int = set()
+    valid_creator_ids_map = {} # Map valid string ID back to integer ID
+    for user_id_str in creator_ids_str:
+        try:
+            user_id_int = int(user_id_str)
+            creator_ids_int.add(user_id_int)
+            valid_creator_ids_map[user_id_str] = user_id_int
+        except (ValueError, TypeError):
+            print(f"Warning: Invalid user_id '{user_id_str}' found in Booking records during match history view.")
+            pass # Ignore invalid IDs for fetching
+
+    # 2. Fetch User objects for valid creator IDs
+    creator_users = User.objects.filter(id__in=creator_ids_int)
+    creator_user_map = {user.id: user for user in creator_users} # Map int ID to User object
+
+    # 3. Prepare the final list, adding the creator user object to each match
+    match_history_list = []
+    for match in match_history_qs:
+        creator_user_obj = None
+        # Find the creator User object using the maps
+        creator_int_id = valid_creator_ids_map.get(match.user_id)
+        if creator_int_id:
+            creator_user_obj = creator_user_map.get(creator_int_id)
+
+        # Add the found creator user object as an attribute to the match instance
+        match.creator_user = creator_user_obj
+        match_history_list.append(match)
+    # --- End Fetch Creator Usernames ---
+
+    # Debugging: Print match history to the console (optional)
+    print("Match History List (with creator_user attached):")
+    for match in match_history_list:
+        creator_name = match.creator_user.username if match.creator_user else f"ID:{match.user_id}"
+        opponent_name = match.opponent.username if match.opponent else "None"
+        print(f"  Match ID: {match.id}, Creator: {creator_name}, Opponent: {opponent_name}, User Result: {match.user_result}, Opponent Result: {match.opponent_result}")
 
     return render(request, 'bookings/match_history.html', {
-        'match_history': match_history
+        'match_history': match_history_list,
+        # Passing the logged-in user is usually done automatically by context processors,
+        # but ensure 'user': request.user is included if needed by your base template.
+        'user': request.user
     })
 
 @login_required
-@csrf_exempt # Keep for now, handle CSRF properly in JS ideally
-@transaction.atomic # Wrap in transaction for safety
+@csrf_exempt
+@transaction.atomic
 def confirm_result_view(request, booking_id):
     """
     Allow players to confirm the result of a simple 1v1 match (from Booking model)
-    and update Elo ranks if results conflict appropriately.
+    and update Elo ranks if results confirm appropriately.
+    If results conflict (win/win or loss/loss), reset both to pending.
     """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            submitted_result = data.get('result')  # Expecting 'win' or 'loss'
+            submitted_result = data.get('result')
 
             if submitted_result not in ['win', 'loss']:
                 return JsonResponse({'success': False, 'message': 'Invalid result submitted.'}, status=400)
 
-            # Fetch the booking, include related opponent user to avoid extra query
             booking = Booking.objects.select_related('opponent').get(id=booking_id)
-            activity_type = booking.booking_type # Get activity type for Elo field determination
+            activity_type = booking.booking_type
 
-            # --- Identify user role and update their result ---
-            # Need to handle potential ValueError if booking.user_id isn't a valid integer string
             try:
                 creator_id = int(booking.user_id)
             except (ValueError, TypeError):
-                 print(f"!!! Error: Invalid user_id format '{booking.user_id}' in Booking ID {booking.id}") # DEBUG
+                 print(f"!!! Error: Invalid user_id format '{booking.user_id}' in Booking ID {booking.id}")
                  return JsonResponse({'success': False, 'message': 'Internal server error (invalid user ID).'}, status=500)
 
             is_creator = request.user.id == creator_id
-            is_opponent = booking.opponent and request.user.id == booking.opponent.id # Check opponent exists
+            is_opponent = booking.opponent and request.user.id == booking.opponent.id
 
             if not is_creator and not is_opponent:
                  return JsonResponse({'success': False, 'message': 'You are not part of this match.'}, status=403)
 
-            # Prevent submitting result again
-            # Check against None and 'pending'
-            if is_creator and booking.user_result not in [None, 'pending']:
+            current_user_result_field = 'user_result' if is_creator else 'opponent_result'
+            current_result_value = getattr(booking, current_user_result_field)
+
+            # Allow submission only if current state is None or 'pending'
+            if current_result_value not in [None, 'pending']:
                  return JsonResponse({'success': False, 'message': 'You have already submitted your result for this match.'}, status=400)
-            if is_opponent and booking.opponent_result not in [None, 'pending']:
-                 return JsonResponse({'success': False, 'message': 'You have already submitted your result for this match.'}, status=400)
 
-            # Update the submitting user's result field
-            if is_creator:
-                booking.user_result = submitted_result
-                print(f"Match {booking_id}: Creator ({request.user.username}) submitted '{submitted_result}'") # DEBUG
-            elif is_opponent: # Only update if confirmed they are the opponent
-                booking.opponent_result = submitted_result
-                print(f"Match {booking_id}: Opponent ({request.user.username}) submitted '{submitted_result}'") # DEBUG
+            setattr(booking, current_user_result_field, submitted_result)
+            print(f"Match {booking_id}: User {request.user.username} ({'Creator' if is_creator else 'Opponent'}) submitted '{submitted_result}'")
+            booking.save()
 
-            booking.save() # Save the submitted result
-
-            # --- Check if match is now resolved ---
             user_res = booking.user_result
             opp_res = booking.opponent_result
+            print(f"Match {booking_id}: Current results - User='{user_res}', Opponent='{opp_res}'")
 
-            print(f"Match {booking_id}: Current results - User='{user_res}', Opponent='{opp_res}'") # DEBUG
-
-            # Check if both results are present (not None or 'pending')
             if user_res and user_res != 'pending' and opp_res and opp_res != 'pending':
-                print(f"Match {booking_id}: Both results are in. Checking for conflict...") # DEBUG
+                print(f"Match {booking_id}: Both results are in. Checking for resolution or conflict...")
 
-                # Check for conflicting results (Win/Loss) - This confirms the match outcome
                 if (user_res == 'win' and opp_res == 'loss') or \
                    (user_res == 'loss' and opp_res == 'win'):
-                    print(f"Match {booking_id}: Results conflict - match resolved.") # DEBUG
+                    print(f"Match {booking_id}: Results confirm the outcome.")
 
                     # --- Trigger Elo Update ---
                     elo_field = get_elo_field_name(activity_type)
-                    print(f"  Elo field: {elo_field}") # DEBUG
+                    print(f"  Elo field: {elo_field}")
 
                     if not elo_field:
-                        # Although result confirmed, Elo isn't tracked for this activity
-                        print(f"  !!! Elo Warning: Elo field name not found for {activity_type}.") # DEBUG
-                        return JsonResponse({'success': True, 'message': 'Match result confirmed, but Elo is not tracked for this activity.'})
+                        print(f"  !!! Elo Warning: Elo field name not found for {activity_type}.")
+                        messages.success(request, 'Match result confirmed!')
+                        return JsonResponse({'success': True, 'message': 'Match result confirmed (Elo not tracked for this activity).'})
 
                     try:
-                        # Fetch creator User object using the stored ID
                         creator_user = User.objects.get(id=creator_id)
-                        # Opponent should already be a prefetched User object if booking.opponent exists
                         opponent_user = booking.opponent
+                        if not opponent_user: raise ValueError("Opponent user not found on booking.")
 
-                        if not opponent_user: # Safety check
-                             print(f"!!! Error: Opponent object not found on Booking ID {booking_id}") # DEBUG
-                             return JsonResponse({'success': False, 'message': 'Internal server error (opponent missing).'}, status=500)
-
-
-                        # Fetch profiles using the User objects
                         creator_profile = UserProfile.objects.get(user=creator_user)
                         opponent_profile = UserProfile.objects.get(user=opponent_user)
 
                         creator_elo = getattr(creator_profile, elo_field)
                         opponent_elo = getattr(opponent_profile, elo_field)
-                        print(f"  Current Elo - Creator ({creator_user.username}): {creator_elo}, Opponent ({opponent_user.username}): {opponent_elo}") # DEBUG
+                        print(f"  Current Elo - Creator ({creator_user.username}): {creator_elo}, Opponent ({opponent_user.username}): {opponent_elo}")
 
-                        # Determine winner/loser based on results
-                        if user_res == 'win': # Creator won
+                        if user_res == 'win':
                             new_creator_elo, new_opponent_elo = update_elo_1v1(creator_elo, opponent_elo)
-                        else: # Opponent won (user_res == 'loss')
+                        else:
                             new_opponent_elo, new_creator_elo = update_elo_1v1(opponent_elo, creator_elo)
 
-                        print(f"  New Elo - Creator: {new_creator_elo}, Opponent: {new_opponent_elo}") # DEBUG
+                        print(f"  New Elo - Creator: {new_creator_elo}, Opponent: {new_opponent_elo}")
 
-                        # Update profiles
                         setattr(creator_profile, elo_field, new_creator_elo)
                         setattr(opponent_profile, elo_field, new_opponent_elo)
                         creator_profile.save()
                         opponent_profile.save()
-                        print(f"  Elo updated and profiles saved.") # DEBUG
+                        print(f"  Elo updated and profiles saved.")
 
-                        # Optional: Update booking status to prevent further changes if you add a status field
-                        # booking.status = 'completed'
-                        # booking.save()
-
+                        messages.success(request, 'Match confirmed and ranks updated!')
                         return JsonResponse({'success': True, 'message': 'Match confirmed and ranks updated!'})
 
-                    except User.DoesNotExist:
-                         print(f"!!! Error: Could not find User for ID {creator_id}") # DEBUG
-                         return JsonResponse({'success': False, 'message': 'Error finding user.'}, status=500)
-                    except UserProfile.DoesNotExist:
-                         print(f"!!! Error: Could not find UserProfile for participants.") # DEBUG
-                         # Return success=True because the result *was* recorded, but add warning?
-                         return JsonResponse({'success': True, 'message': 'Match result confirmed, but failed to update ranks (profile missing).'})
+                    except (User.DoesNotExist, UserProfile.DoesNotExist, ValueError) as profile_err:
+                         print(f"!!! Error finding user/profile or opponent: {profile_err}")
+                         messages.warning(request, 'Match result confirmed, but failed to update ranks.')
+                         return JsonResponse({'success': True, 'message': f'Match result confirmed, but failed to update ranks ({profile_err}).'})
                     except Exception as e:
-                         print(f"!!! Error during Elo update: {e}") # DEBUG
-                         # Log the error e more formally if desired
+                         print(f"!!! Error during Elo update: {e}")
+                         messages.error(request, 'An error occurred during rank update.')
                          return JsonResponse({'success': False, 'message': 'An error occurred during rank update.'}, status=500)
 
-                else: # Results match (e.g., both 'win' or both 'loss') - DISPUTED
-                    print(f"Match {booking_id}: Results submitted by both players, but they match - DISPUTED.") # DEBUG
-                    # Optional: Update booking status
-                    # booking.status = 'disputed'
-                    # booking.save()
-                    # Consider preventing further Elo updates if disputed
-                    return JsonResponse({'success': True, 'message': 'Result recorded, but it conflicts with the opponent\'s submission. Please resolve manually.'})
+                else: # Results conflict (e.g., both 'win' or both 'loss') - RESET TO PENDING
+                    print(f"Match {booking_id}: Results submitted by both players conflict. Resetting to pending.")
 
-            else: # Only one result submitted so far, or one is still 'pending'/None
-                print(f"Match {booking_id}: Waiting for opponent's result.") # DEBUG
+                    booking.user_result = 'pending'
+                    booking.opponent_result = 'pending'
+                    booking.save() # Save the reset status
+
+                    # === ADDED DEBUGGING ===
+                    # Re-fetch from DB right after save to confirm persisted state
+                    try:
+                        reloaded_booking = Booking.objects.get(id=booking_id)
+                        print(f"Match {booking_id}: CONFIRMED STATE AFTER RESET+SAVE - User='{reloaded_booking.user_result}', Opponent='{reloaded_booking.opponent_result}'")
+                    except Booking.DoesNotExist:
+                         print(f"!!! Error: Booking {booking_id} not found immediately after save?!")
+                    # ========================
+
+                    messages.warning(request, "Conflicting results submitted. Both results reset to pending.")
+
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Conflicting results submitted. Both results have been reset to pending. Please coordinate with your opponent and resubmit.'
+                    })
+
+            else: # Only one result submitted so far
+                print(f"Match {booking_id}: Waiting for opponent's result.")
+                messages.info(request, 'Result recorded. Waiting for opponent.')
                 return JsonResponse({'success': True, 'message': 'Result recorded. Waiting for opponent.'})
 
         except Booking.DoesNotExist:
+            messages.error(request, 'Match not found.')
             return JsonResponse({'success': False, 'message': 'Match not found.'}, status=404)
         except json.JSONDecodeError:
+            messages.error(request, 'Invalid request format.')
             return JsonResponse({'success': False, 'message': 'Invalid request format.'}, status=400)
         except Exception as e:
-            print(f"!!! Unexpected Error in confirm_result_view: {type(e).__name__} - {e}") # DEBUG
-            # Log the error e more formally if desired using logging module
+            print(f"!!! Unexpected Error in confirm_result_view: {type(e).__name__} - {e}")
+            import traceback
+            traceback.print_exc() # Print full traceback for unexpected errors
+            messages.error(request, 'An unexpected server error occurred.')
             return JsonResponse({'success': False, 'message': 'An unexpected server error occurred.'}, status=500)
 
-    # Handle non-POST requests if necessary, though typically not needed for this kind of action
-    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405) # Method Not Allowed
+    return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
 
 
 

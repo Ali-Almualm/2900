@@ -1,3 +1,5 @@
+{# bookings/templates/bookings/match_history.html #}
+
 {% extends "base.html" %}
 
 {% block title %}Match History{% endblock %}
@@ -5,134 +7,136 @@
 {% block content %}
 <h1>Match History</h1>
 
-<!-- Debugging Information -->
-<div>
-    <h3>Debugging Information</h3>
-    <p>Logged-in User ID: {{ user.id }}</p>
-    <p>Logged-in Username: {{ user.username }}</p>
-</div>
+{% if messages %}
+    <ul class="messages">
+        {% for message in messages %}
+        <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    <style>
+        ul.messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .messages li { padding: 10px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em; }
+        .messages li.success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .messages li.error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .messages li.warning { background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
+        .messages li.info { background-color: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+{% endif %}
+
 
 {% if match_history %}
     <table class="match-history-table">
         <thead>
             <tr>
+                {# ... other headers ... #}
                 <th>Match ID</th>
-                <th>Match Name</th>
                 <th>Activity</th>
-                <th>Start Time</th>
-                <th>End Time</th>
-                <th>Match Creator</th>
+                <th>Time</th>
+                <th>Creator</th>
                 <th>Opponent</th>
-                <th>Your Role</th> <!-- New column for role -->
-                <th>Your Result</th>
-                <th>Opponent's Result</th>
+                <th>Your Status</th>
+                <th>Opponent Status</th>
                 <th>Action</th>
+                {# Keep debug info if helpful #}
                 <th>Debug Info</th>
             </tr>
         </thead>
         <tbody>
             {% for match in match_history %}
             <tr>
+                {# ... other cells ... #}
                 <td>{{ match.id }}</td>
-                <td>{{ match.name }}</td>
                 <td>{{ match.booking_type|title }}</td>
-                <td>{{ match.start_time|date:"M d, Y H:i" }}</td>
-                <td>{{ match.end_time|date:"M d, Y H:i" }}</td>
-                <td>{{ match.user_id }}</td> <!-- Match creator's user_id -->
+                <td>{{ match.start_time|date:"M d, H:i" }}</td>
+                <td>{{ match.creator_user.username|default:match.user_id|default:"N/A" }}</td>
+                <td>{{ match.opponent.username|default:"No opponent" }}</td>
+
+                {# Your Status Display #}
                 <td>
-                    {% if match.opponent %}
-                        {{ match.opponent.username }}
+                    {% if match.user_id == user.id|stringformat:"s" %} {# You are Creator #}
+                        {% if match.user_result == 'win' %}Won
+                        {% elif match.user_result == 'loss' %}Lost
+                        {% elif match.user_result == 'pending' %}Pending Input
+                        {% elif match.user_result is None %}Pending Input
+                        {% else %}? ({{ match.user_result }})
+                        {% endif %}
+                    {% elif match.opponent and match.opponent.id == user.id %} {# You are Opponent #}
+                        {% if match.opponent_result == 'win' %}Won
+                        {% elif match.opponent_result == 'loss' %}Lost
+                        {% elif match.opponent_result == 'pending' %}Pending Input
+                        {% elif match.opponent_result is None %}Pending Input
+                        {% else %}? ({{ match.opponent_result }})
+                        {% endif %}
                     {% else %}
-                        No opponent
-                    {% endif %}
-                </td>
-                <td>
-                    <!-- Determine the role of the logged-in user -->
-                    {% if match.user_id == user.id|stringformat:"s" %}
-                        Match Creator
-                    {% elif match.opponent and match.opponent.id == user.id %}
-                        Opponent
-                    {% else %}
-                        Unknown
-                    {% endif %}
-                </td>
-                <td>
-                    {% if match.user_id == user.id|stringformat:"s" %}
-                        <!-- Your Result as Match Creator -->
-                        {% if match.user_result == 'win' %}
-                            Won
-                        {% elif match.user_result == 'loss' %}
-                            Lost
-                        {% else %}
-                            Pending
-                        {% endif %}
-                    {% elif match.opponent and match.opponent.id == user.id %}
-                        <!-- Your Result as Opponent -->
-                        {% if match.opponent_result == 'win' %}
-                            Won
-                        {% elif match.opponent_result == 'loss' %}
-                            Lost
-                        {% else %}
-                            Pending
-                        {% endif %}
-                    {% endif %}
-                </td>
-                <td>
-                    {% if match.user_id == user.id|stringformat:"s" %}
-                        <!-- Opponent's Result as Match Creator -->
-                        {% if match.opponent_result == 'win' %}
-                            Won
-                        {% elif match.opponent_result == 'loss' %}
-                            Lost
-                        {% else %}
-                            Pending
-                        {% endif %}
-                    {% elif match.opponent and match.opponent.id == user.id %}
-                        <!-- Opponent's Result as Opponent -->
-                        {% if match.user_result == 'win' %}
-                            Won
-                        {% elif match.user_result == 'loss' %}
-                            Lost
-                        {% else %}
-                            Pending
-                        {% endif %}
-                    {% endif %}
-                </td>
-                <td> {# Action Column #}
-                    {# Condition 1: Check if user is creator #}
-                    {% if match.user_id == user.id|stringformat:"s" %}
-                        {# THEN check if creator's result is pending #}
-                        {% if match.user_result == 'pending' or match.user_result is None %}
-                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
-                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
-                        {% else %}
-                            {# Optionally show something if result submitted but opponent hasn't #}
-                            -
-                        {% endif %}
-    
-                    {# Condition 2: Check if user is opponent #}
-                    {% elif match.opponent and match.opponent.id == user.id %}
-                        {# THEN check if opponent's result is pending #}
-                        {% if match.opponent_result == 'pending' or match.opponent_result is None %}
-                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
-                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
-                        {% else %}
-                             {# Optionally show something if result submitted but opponent hasn't #}
-                             -
-                        {% endif %}
-    
-                    {# Fallback if user is neither participant or results are final #}
-                    {% else %}
-                        -
+                        N/A
                     {% endif %}
                 </td>
 
-                <td>
-                    <!-- Debugging Information for Each Match -->
+                {# Opponent Status Display #}
+                 <td>
+                    {% if match.user_id == user.id|stringformat:"s" %} {# You are Creator, show Opponent's #}
+                        {% if match.opponent %}
+                            {% if match.opponent_result == 'win' %}Won
+                            {% elif match.opponent_result == 'loss' %}Lost
+                            {% elif match.opponent_result == 'pending' %}Pending Input
+                            {% elif match.opponent_result is None %}Pending Input
+                            {% else %}? ({{ match.opponent_result }})
+                            {% endif %}
+                        {% else %}No Opponent{% endif %}
+                    {% elif match.opponent and match.opponent.id == user.id %} {# You are Opponent, show Creator's #}
+                        {% if match.user_result == 'win' %}Won
+                        {% elif match.user_result == 'loss' %}Lost
+                        {% elif match.user_result == 'pending' %}Pending Input
+                        {% elif match.user_result is None %}Pending Input
+                        {% else %}? ({{ match.user_result }})
+                        {% endif %}
+                     {% else %}
+                         N/A
+                     {% endif %}
+                 </td>
+
+                <td> {# Action Column - Updated Logic #}
+                    {% comment %} Determine whose perspective we need {% endcomment %}
+                    {% if match.user_id == user.id|stringformat:"s" %}
+                        {% comment %} User is the CREATOR {% endcomment %}
+                        {% if match.user_result == 'pending' or match.user_result is None %}
+                             {# Allow input if creator's result is pending or None #}
+                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                        {% elif match.opponent_result == 'pending' or match.opponent_result is None %}
+                             {# Creator submitted, opponent hasn't - show waiting message #}
+                            <span class="waiting-opponent">Waiting for opponent</span>
+                        {% else %}
+                            {# Both submitted (and maybe resolved or conflicted) - No action needed here #}
+                            <span class="results-submitted">Results Submitted</span>
+                        {% endif %}
+
+                    {% elif match.opponent and match.opponent.id == user.id %}
+                        {% comment %} User is the OPPONENT {% endcomment %}
+                        {% if match.opponent_result == 'pending' or match.opponent_result is None %}
+                             {# Allow input if opponent's result is pending or None #}
+                            <button class="action-button win-button" onclick="confirmResult('{{ match.id }}', 'win')">I Won</button>
+                            <button class="action-button loss-button" onclick="confirmResult('{{ match.id }}', 'loss')">I Lost</button>
+                        {% elif match.user_result == 'pending' or match.user_result is None %}
+                             {# Opponent submitted, creator hasn't - show waiting message #}
+                            <span class="waiting-opponent">Waiting for opponent</span>
+                        {% else %}
+                             {# Both submitted (and maybe resolved or conflicted) - No action needed here #}
+                            <span class="results-submitted">Results Submitted</span>
+                        {% endif %}
+
+                    {% else %}
+                         {# User is not part of this match record #}
+                         -
+                    {% endif %}
+                </td>
+                 {# Keep debug info if helpful #}
+                 <td>
+                    <p>Match ID: {{ match.id }}</p>
                     <p>Match Creator ID: {{ match.user_id }}</p>
                     <p>Opponent ID: {% if match.opponent %}{{ match.opponent.id }}{% else %}No opponent{% endif %}</p>
-                    <p>User Result: {{ match.user_result }}</p>
-                    <p>Opponent Result: {{ match.opponent_result }}</p>
+                    <p>User Result DB: {{ match.user_result|default:"(None)" }}</p>
+                    <p>Opponent Result DB: {{ match.opponent_result|default:"(None)" }}</p>
                 </td>
             </tr>
             {% endfor %}
@@ -142,38 +146,74 @@
     <p>No match history available.</p>
 {% endif %}
 
+{# Keep JavaScript and Styles the same #}
 <script>
 function confirmResult(matchId, result) {
     fetch(`/confirm-result/${matchId}/`, {
         method: "POST",
         headers: {
-            "X-CSRFToken": "{{ csrf_token }}",
+            "X-CSRFToken": "{{ csrf_token }}", // Assumes csrf_token is available in context
             "Content-Type": "application/json"
         },
         body: JSON.stringify({ result: result })
     })
-    .then(response => response.json())
-    .then(data => {
-        alert(data.message);
-        location.reload(); // Reload the page to reflect the updated results
+    .then(response => {
+        // Check if response is ok (status in 200-299 range)
+        if (!response.ok) {
+            // Try to parse error message from JSON if possible
+            return response.json().then(errData => {
+                throw new Error(errData.message || `Request failed with status ${response.status}`);
+            }).catch(() => {
+                // Fallback if response is not JSON or json parsing fails
+                throw new Error(`Request failed with status ${response.status}`);
+            });
+        }
+        return response.json(); // Parse JSON body of the response
     })
-    .catch(error => console.error("Error:", error));
+    .then(data => {
+        // Display the message from the backend (success or specific info/warning)
+        // Replace alert with a more user-friendly notification if possible
+        alert(data.message);
+        // Always reload to reflect the latest state from the database
+        location.reload();
+    })
+    .catch(error => {
+        console.error("Error:", error);
+        // Display error to the user
+        alert(`Error: ${error.message}`);
+        // Optionally reload even on error, or handle differently
+        // location.reload();
+    });
 }
 </script>
 
 <style>
-/* Match History Table */
-/* In styles.css */
-
+/* ... (your existing styles) ... */
+.waiting-opponent, .results-submitted {
+    color: #6c757d; /* Gray */
+    font-style: italic;
+    font-size: 0.9em;
+}
+/* Match History Table Styles */
+.match-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 0.9em; /* Adjust as needed */
+    box-shadow: 0 2px 3px rgba(0,0,0,0.1);
+}
 
 .match-history-table th, .match-history-table td {
     border: 1px solid #ddd;
-    padding: 8px;
+    padding: 8px 10px; /* Adjust padding */
+    text-align: left;
+    vertical-align: middle; /* Align text vertically */
 }
 
 .match-history-table th {
     background-color: #f4f4f4;
     font-weight: bold;
+    white-space: nowrap; /* Prevent headers from wrapping */
 }
 
 .match-history-table tr:nth-child(even) {
@@ -184,30 +224,31 @@ function confirmResult(matchId, result) {
     background-color: #f1f1f1;
 }
 
-/* Buttons */
+/* Buttons in table */
 .action-button {
-    padding: 8px 12px;
+    padding: 5px 10px; /* Slightly smaller buttons */
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 0.9em; /* Match table font size */
     color: #fff;
+    margin-right: 5px; /* Space between buttons */
+    white-space: nowrap;
+}
+.action-button:last-child {
+    margin-right: 0;
 }
 
-.win-button {
-    background-color: #4CAF50; /* Green */
-}
+.win-button { background-color: #28a745; } /* Green */
+.win-button:hover { background-color: #218838; }
+.loss-button { background-color: #dc3545; } /* Red */
+.loss-button:hover { background-color: #c82333; }
 
-.win-button:hover {
-    background-color: #45a049;
-}
-
-.loss-button {
-    background-color: #f44336; /* Red */
-}
-
-.loss-button:hover {
-    background-color: #e53935;
+/* Debug info */
+.match-history-table td p {
+    margin: 2px 0;
+    font-size: 0.85em;
+    color: #555;
 }
 </style>
 {% endblock %}
