@@ -7,6 +7,8 @@ from django.forms import modelformset_factory # Import formset factory
 from django import forms
 from django.http import JsonResponse
 from datetime import datetime, timedelta, date, time
+from django.utils import timezone
+
 from django.contrib import messages
 from django.urls import reverse # For redirects
 
@@ -366,12 +368,23 @@ def delete_match_availability(request, match_availability_id):
 def find_matches(request, activity_type):
     """
     Find users who have matching availability for the given activity,
-    ensuring the overlapping slots are not already booked or part of a competition.
-    Also handles pending requests.
+    ensuring the overlapping slots are NOT in the past and are not
+    already booked or part of a competition.
+    Also filters pending requests to show only future ones.
     """
-    user_profile = request.user.userprofile
+    try:
+        user_profile = request.user.userprofile
+    except UserProfile.DoesNotExist:
+        # Handle case where profile might not exist for some reason
+        # Maybe redirect to a profile creation page or return an error
+        messages.error(request, "Your user profile could not be found.")
+        # Redirect to index or appropriate page
+        return redirect('index')
+
+    now = timezone.now()
 
     # Get the user's skill level for this activity
+    # --- ADDED ELSE BLOCK ---
     if activity_type == 'pool':
         user_skill = user_profile.ranking_pool
     elif activity_type == 'switch':
@@ -379,132 +392,111 @@ def find_matches(request, activity_type):
     elif activity_type == 'table_tennis':
         user_skill = user_profile.ranking_table_tennis
     else:
-        user_skill = 0 # Default or raise error?
+        # Handle unknown activity type - Assign default or raise error
+        user_skill = 1500 # Assign default ranking (same as model default)
+        # Log a warning - useful for debugging unexpected activity types
+        print(f"WARNING: Unknown activity_type '{activity_type}' in find_matches for user {request.user.username}. Using default skill {user_skill}.")
+        # Alternatively, raise an error if an invalid type should stop the process:
+        # from django.http import Http404
+        # raise Http404(f"Invalid activity type provided: {activity_type}")
+    # --- END ADDED ELSE BLOCK ---
 
-    # Get the user's availability for this activity
+
+    # Get the user's FUTURE availability for this activity
     user_match_availability = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
-        is_available=True
-    ).order_by('start_time') # Order for potentially cleaner overlap logic
+        is_available=True,
+        end_time__gt=now
+    ).order_by('start_time')
 
+    # Determine error message if user has no availability
+    error_msg = None
     if not user_match_availability.exists():
-        # Fetch pending requests even if user has no availability set
-        pending_requests = BookingRequestmatch.objects.filter(
-            requested_player=request.user,
-            is_confirmed=False,
-            is_rejected=False
-        ).select_related('requester') # Optimize query
+         error_msg = 'You have no future match availability set. Set your availability to find matches.'
+         # Note: If we exit here, user_skill was still calculated but won't be used below
 
-        return render(request, 'bookings/matches.html', {
-            'activity_type': activity_type,
-            'matches': [],
-            'pending_requests': pending_requests,
-            'error': 'You need to set your match availability before finding matches.'
-        })
-
-    # Find all other users with availability for this activity
+    # Find potential matches even if user has no availability (to still show pending requests)
     potential_matches = []
-    # Exclude self and fetch related profiles and availability efficiently
+    # Find all other users with FUTURE availability for this activity
     other_users_with_availability = User.objects.exclude(id=request.user.id).prefetch_related(
         'userprofile',
         models.Prefetch(
             'matchavailability_set',
-            queryset=MatchAvailability.objects.filter(booking_type=activity_type, is_available=True),
+            queryset=MatchAvailability.objects.filter(
+                booking_type=activity_type,
+                is_available=True,
+                end_time__gt=now
+            ),
             to_attr='filtered_availability'
         )
     )
 
-    # Get *all* bookings and competitions for the relevant activity type upfront
-    # This is more efficient than querying inside the loop for each overlap
-    # Filter by date range if possible to reduce load (e.g., only check today/upcoming week)
-    all_bookings = Booking.objects.filter(booking_type=activity_type) # Add date filtering if needed
-    all_competitions = Competition.objects.filter(activity_type=activity_type) # Add date filtering if needed
+    # Get relevant bookings and competitions (only future ones needed for conflict checks)
+    all_bookings = Booking.objects.filter(booking_type=activity_type, end_time__gt=now)
+    all_competitions = Competition.objects.filter(activity_type=activity_type, end_time__gt=now)
 
-
-    for other_user in other_users_with_availability:
-        # Access the prefetched availability
-        other_match_availability = getattr(other_user, 'filtered_availability', [])
-
-        if not other_match_availability:
-            continue # Skip user if they have no availability for this activity
-
-        overlapping_times = []
-
-        for user_slot in user_match_availability:
-            for other_slot in other_match_availability:
-                # Check if user/other availability slots overlap
-                latest_start = max(user_slot.start_time, other_slot.start_time)
-                earliest_end = min(user_slot.end_time, other_slot.end_time)
-
-                if latest_start < earliest_end: # They overlap
-                    overlap_start = latest_start
-                    overlap_end = earliest_end
-
-                    # --- Check if this specific overlap period is already booked ---
-                    is_slot_booked = False
-
-                    # Check against Bookings
-                    if all_bookings.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
-                        is_slot_booked = True
-                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Booking.") # Optional Debug
-
-                    # Check against Competitions (only if not already found booked)
-                    if not is_slot_booked and all_competitions.filter(start_time__lt=overlap_end, end_time__gt=overlap_start).exists():
-                        is_slot_booked = True
-                        # print(f"DEBUG: Slot {overlap_start}-{overlap_end} for {activity_type} conflicts with a Competition.") # Optional Debug
-
-                    # --- Only add the overlap if it's NOT booked ---
-                    if not is_slot_booked:
-                        overlapping_times.append({
-                            'start': overlap_start,
-                            'end': overlap_end,
-                            'duration_minutes': (overlap_end - overlap_start).total_seconds() / 60
-                        })
-                    # --- End check ---
-
-        # Only add the user to potential_matches if there are valid, available overlapping times
-        if overlapping_times:
-            # Get other user's skill level from prefetched profile
-            try:
-                other_profile = other_user.userprofile
-                if activity_type == 'pool':
-                    other_skill = other_profile.ranking_pool
-                elif activity_type == 'switch':
-                    other_skill = other_profile.ranking_switch
-                elif activity_type == 'table_tennis':
-                    other_skill = other_profile.ranking_table_tennis
-                else:
-                    other_skill = 0 # Or handle appropriately
-
-                # Calculate skill difference
-                skill_difference = abs(user_skill - other_skill)
-
-                potential_matches.append({
-                    'user': other_user,
-                    'overlapping_times': overlapping_times, # This list now only contains available slots
-                    'skill_level': other_skill,
-                    'skill_difference': skill_difference
-                })
-            except UserProfile.DoesNotExist:
-                # This shouldn't happen if the signal works, but good to handle
+    # Only calculate overlaps if the user actually has availability
+    if user_match_availability.exists():
+        for other_user in other_users_with_availability:
+            other_match_availability = getattr(other_user, 'filtered_availability', [])
+            if not other_match_availability:
                 continue
 
-    # Sort matches by skill difference (closer matches first)
+            overlapping_times = []
+            for user_slot in user_match_availability:
+                for other_slot in other_match_availability:
+                    latest_start = max(user_slot.start_time, other_slot.start_time)
+                    earliest_end = min(user_slot.end_time, other_slot.end_time)
+
+                    if latest_start < earliest_end and latest_start >= now:
+                        is_slot_booked = False
+                        if all_bookings.filter(start_time__lt=earliest_end, end_time__gt=latest_start).exists():
+                            is_slot_booked = True
+                        if not is_slot_booked and all_competitions.filter(start_time__lt=earliest_end, end_time__gt=latest_start).exists():
+                            is_slot_booked = True
+
+                        if not is_slot_booked:
+                            overlapping_times.append({
+                                'start': latest_start, 'end': earliest_end,
+                                'duration_minutes': (earliest_end - latest_start).total_seconds() / 60
+                            })
+
+            if overlapping_times:
+                try:
+                    other_profile = other_user.userprofile
+                    if activity_type == 'pool': other_skill = other_profile.ranking_pool
+                    elif activity_type == 'switch': other_skill = other_profile.ranking_switch
+                    elif activity_type == 'table_tennis': other_skill = other_profile.ranking_table_tennis
+                    else: other_skill = 1500 # Use default if activity type was unknown
+
+                    # 'user_skill' is now guaranteed to have a value
+                    skill_difference = abs(user_skill - other_skill)
+
+                    potential_matches.append({
+                        'user': other_user, 'overlapping_times': overlapping_times,
+                        'skill_level': other_skill, 'skill_difference': skill_difference
+                    })
+                except UserProfile.DoesNotExist:
+                    # Handle case where the other user somehow doesn't have a profile
+                    print(f"WARNING: UserProfile not found for user {other_user.username} in find_matches.")
+                    continue
+
     potential_matches.sort(key=lambda x: x['skill_difference'])
 
-    # Fetch pending match requests for the logged-in user (optimize query)
+    # Fetch only FUTURE pending match requests
     pending_requests = BookingRequestmatch.objects.filter(
         requested_player=request.user,
         is_confirmed=False,
-        is_rejected=False
-    ).select_related('requester') # Fetch requester info efficiently
+        is_rejected=False,
+        end_time__gt=now
+    ).select_related('requester').order_by('start_time')
 
     return render(request, 'bookings/matches.html', {
         'activity_type': activity_type,
-        'matches': potential_matches, # Pass the filtered list
+        'matches': potential_matches,
         'pending_requests': pending_requests,
-        'error': None # Clear any previous error if availability exists now
+        'error': error_msg # Pass the error message determined earlier
     })
 
 
