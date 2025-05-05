@@ -1,296 +1,457 @@
 {% extends "base.html" %}
+{% load static %} {# Load static files tag library #}
 
 {% block title %}BookMe - Timetable{% endblock %}
 
 {% block content %}
+    {% csrf_token %}
+
     <h2>Timetable (15-Minute Slots)</h2>
 
-    {# --- Date Selector (Keep as is) --- #}
-    <div class="date-selector" style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;"> {# Use flexbox for alignment #}
-        {# Previous Day Button #}
+    {# Date Selector with Navigation Buttons #}
+    <div class="date-selector" style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
         <a href="{% url 'index' %}?date={{ previous_date }}" class="button date-nav-button">&lt; Prev</a>
-
-        {# Date Input #}
-        <div> {# Wrap label and input for better control if needed #}
+        <div>
             <label for="selected-date" style="margin-right: 5px;">Select Date:</label>
             <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}" onchange="changeDate()">
         </div>
-
-        {# Today Button #}
-        {# Only show Today button if selected date is not today #}
         {% if selected_date|date:'Y-m-d' != today_date %}
             <a href="{% url 'index' %}?date={{ today_date }}" class="button date-nav-button">Today</a>
         {% endif %}
-
-        {# Next Day Button #}
         <a href="{% url 'index' %}?date={{ next_date }}" class="button date-nav-button">Next &gt;</a>
     </div>
 
-    {# --- NEW: Tab Navigation --- #}
+    {# Tab Navigation #}
     <div class="tab-navigation">
-        {# Add 'active' class to the default tab link #}
         <button class="tab-link active" data-target="pool-pane">Pool</button>
         <button class="tab-link" data-target="switch-pane">Nintendo Switch</button>
         <button class="tab-link" data-target="table_tennis-pane">Table Tennis</button>
-        {# Optional: Add "My Schedule" tab here later #}
     </div>
 
-    {# --- NEW: Tab Content Panes --- #}
+    {# Tab Content Panes #}
     <div class="tab-content">
-        {# Loop through activities provided by the view context #}
         {% for activity, slots in timetable_by_activity.items %}
-            {# Apply 'active' class directly based on comparison #}
-            <div id="{{ activity }}-pane" class="tab-pane{% if activity == 'pool' %} active{% endif %}"> {# <--- CORRECTED LINE #}
-                {# Keep the existing table structure inside the pane #}
-                <h3>
-                    {% if activity == "pool" %}Pool
-                    {% elif activity == "switch" %}Nintendo Switch
-                    {% elif activity == "table_tennis" %}Table Tennis
-                    {% endif %}
-                </h3>
-                <div class="table-wrapper"> {# Add wrapper for potential horizontal scroll #}
+            <div id="{{ activity }}-pane" class="tab-pane{% if activity == 'pool' %} active{% endif %}">
+
+                {# Container for Heading and Action Group #}
+                <div class="pane-header">
+                    <h3>
+                        {% if activity == "pool" %}Pool
+                        {% elif activity == "switch" %}Nintendo Switch
+                        {% elif activity == "table_tennis" %}Table Tennis
+                        {% endif %}
+                        Schedule
+                    </h3>
+                    {# Group for Prompt and Button #}
+                    <div class="prompt-action-group">
+                        {% if user.is_authenticated %}
+                            {# Availability Prompt #}
+                            <span class="availability-prompt">
+                                Use matchmaking? Set availability &rarr;
+                            </span>
+                            {# "Set Availability" Button #}
+                            <a href="{% url 'match_availability' activity_type=activity %}" class="button button-set-availability">
+                                Set {{ activity|title }} Availability
+                            </a>
+                        {% endif %}
+                    </div>
+                    {# End Group #}
+                </div>
+                {# End pane-header #}
+
+                {# Timetable Table #}
+                <div class="table-wrapper">
                     <table class="timetable">
                         <thead>
                             <tr>
                                 <th>Time Slot</th>
                                 <th>Status</th>
                                 <th>Booked By / Comp Details</th>
-                                <th>Action</th>
+                                {# Action column with class for styling #}
+                                <th class="action-column">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for slot in slots %}
                             <tr class="{% if slot.type == 'available' %}clickable{% elif slot.type == 'competition' %}competition-slot{% endif %}"
-                                data-time="{{ slot.time_slot }}" data-date="{{ selected_date }}" data-activity="{{ activity }}">
-
-                                <td>{{ slot.time_slot }}</td>
-                                <td {% if slot.type == "booked" %} style="color: red;"
-                                    {% elif slot.type == "competition" %} style="color: blue;"
-                                    {% else %} style="color: green;" {% endif %}>
-                                    {{ slot.status }}
-                                </td>
-                                <td>
-                                    {% if slot.type == 'competition' %}
-                                         <small>By: {{ slot.name|default:'-' }} ({{ slot.details }})</small>
+                            data-time="{{ slot.time_slot }}" data-date="{{ selected_date|date:'Y-m-d' }}" data-activity="{{ activity }}">
+                        
+                            <td>{{ slot.time_slot }}</td>
+                            <td {% if slot.type == "booked" %} style="color: red;" {% elif slot.type == "competition" %} style="color: blue;" {% else %} style="color: green;" {% endif %}>
+                                {{ slot.status }}
+                            </td>
+                            <td>
+                                {% if slot.type == 'competition' %}
+                                     <small>By: {{ slot.name|default:'-' }} ({{ slot.details }})</small>
+                                {% elif slot.type == 'booked' %} {# Display match participants if it's a match #}
+                                     {{ slot.name|default:"-" }}
+                                {% else %}
+                                    {{ slot.name|default:"-" }}
+                                {% endif %}
+                            </td>
+                        
+                            {# Action Cell with class for styling #}
+                            <td class="action-column">
+                                {% if slot.type == "booked" %}
+                                    {# --- NEW Logic for Booked Slots --- #}
+                                    {% if slot.is_match and slot.is_participant %} {# Is it a 1v1 match the user is in? #}
+                                        {# Check if match has started #}
+                                        {% if now >= slot.start_datetime %}
+                                            {# Match started: Show active button linking to match history #}
+                                            <a href="{% url 'match_history' %}" class="button button-small button-register-results">
+                                                Register Results
+                                            </a>
+                                        {% else %}
+                                            {# Match not started: Show disabled button with alert #}
+                                            <button
+                                                class="button button-small button-register-results button-disabled"
+                                                onclick="alert('Cannot register result until the match start time ({{ slot.start_datetime|time:"H:i" }}) has passed.'); return false;">
+                                                Register Results
+                                            </button>
+                                        {% endif %}
+                                    {% elif slot.booked_by_user %} {# Is it a non-match booking created by the user? #}
+                                        {# Allow cancelling non-match bookings #}
+                                         <button class="button button-small button-danger" onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id|default:'' }}')">Cancel</button>
                                     {% else %}
-                                        {{ slot.name|default:"-" }}
+                                         {# Booked by someone else, not a match user is in #}
+                                         -
                                     {% endif %}
-                                </td>
-                                <td>
-                                    {# Action logic remains the same as before #}
-                                    {% if slot.type == "booked" and slot.booked_by_user %}
-                                        <button onclick="cancelBooking('{{ slot.booking_id }}', '{{ slot.user_id }}')">Cancel Booking</button>
-                                    {% elif slot.type == "competition" %}
-                                        <a href="{% url 'competition_detail' competition_id=slot.competition_id %}" class="button button-small button-info">Details</a>
-                                        {% if user.is_authenticated %}
-                                            {% if slot.is_creator %}
-                                                <span style="color: gray; font-weight: bold; margin-left: 5px;">Creator</span>
-                                            {% elif slot.user_joined %}
-                                                <button onclick="leaveCompetition('{{ slot.competition_id }}')" class="button button-small button-danger" style="margin-left: 5px;">Leave</button> {# Added class #}
-                                            {% elif slot.can_join_competition %}
-                                                <button onclick="joinCompetition('{{ slot.competition_id }}')" class="button button-small button-success" style="margin-left: 5px;">Join</button> {# Added class #}
-                                            {% elif slot.is_full %}
-                                                <span style="color: orange; font-weight: bold; margin-left: 5px;">Full</span>
-                                            {% else %}
-                                                <span style="color: gray; margin-left: 5px;">Unavailable</span>
-                                            {% endif %}
-                                        {% else %}
-                                             <span style="margin-left: 5px;"><a href="{% url 'login' %}?next={{ request.path }}">Login to Join/View</a></span>
+                                    {# --- END New Logic for Booked Slots --- #}
+                        
+                                {% elif slot.type == "competition" %}
+                                    {# Competition logic remains the same #}
+                                    <a href="{% url 'competition_detail' competition_id=slot.competition_id %}" class="button button-small button-info">Details</a>
+                                    {% if user.is_authenticated %}
+                                        {% if slot.is_creator %} <span class="creator-tag">Creator</span>
+                                        {% elif slot.user_joined %} <button onclick="leaveCompetition('{{ slot.competition_id }}')" class="button button-small button-danger">Leave</button>
+                                        {% elif slot.can_join_competition %} <button onclick="joinCompetition('{{ slot.competition_id }}')" class="button button-small button-success">Join</button>
+                                        {% elif slot.is_full %} <span class="status-tag status-full">Full</span>
+                                        {% else %} <span class="status-tag status-closed">Closed</span>
                                         {% endif %}
-                                    {% elif slot.type == "available" %}
-                                        {% if user.is_authenticated %}
-                                            <button onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
-                                        {% else %}
-                                            <p><a href="{% url 'login' %}?next={{ request.path }}">Log in</a> to book.</p>
-                                        {% endif %}
+                                    {% else %} <span class="login-prompt"><a href="{% url 'login' %}?next={{ request.path }}">Login</a></span>
+                                    {% endif %}
+                        
+                                {% elif slot.type == "available" %}
+                                     {# Available slot logic remains the same #}
+                                    {% if user.is_authenticated %}
+                                        <button class="button button-book" onclick="openBookingForm('{{ slot.time_slot }}', '{{ selected_date|date:'Y-m-d' }}', '{{ activity }}')">Book</button>
                                     {% else %}
+                                        <p class="login-prompt"><a href="{% url 'login' %}?next={{ request.path }}">Log in</a></p>
+                                    {% endif %}
+                                {% else %}
                                      -
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
+                                {% endif %}
+                            </td>
+                        </tr>                            {% endfor %}
                         </tbody>
                     </table>
                 </div> {# End table-wrapper #}
             </div> {# End tab-pane #}
-            {# No need for {% endwith %} here anymore #}
         {% endfor %}
     </div> {# End tab-content #}
 
-    {# --- Booking Modal (Keep as is) --- #}
+
+    {# Booking Modal (Keep as is) #}
     {% if user.is_authenticated %}
     <div id="booking-overlay" class="overlay" style="display: none;">
-        <div class="overlay-content">
+        {# Use same content class for consistent styling #}
+        <div class="overlay-content booking-confirmation-content">
             <span class="close" onclick="closeBookingForm()">&times;</span>
-            <h2>Book Time Slot</h2>
-            <form id="booking-form">
-                {% csrf_token %}
-                <div class="form-group">
-                    <label for="selected-date-display">Selected Date:</label>
-                    <input type="text" id="selected-date-display" name="booking_date" readonly>
-                </div>
-                <div class="form-group">
-                    <label for="selected-time">Selected Time:</label>
-                    <input type="text" id="selected-time" name="start_time" readonly>
-                </div>
-                <div class="form-group">
-                    <label for="username">Username:</label>
-                    <input type="text" id="username" name="username" value="{{ user.username }}" readonly>
-                </div>
-                <div class="form-group">
-                    <label for="name">Name:</label>
-                    <input type="text" id="name" name="name" value="{{ user.username }}" readonly>
-                </div>
-                <div class="form-group">
-                    <label for="booking_type">Activity:</label>
-                    <input type="text" id="booking_type" name="booking_type" readonly>
-                </div>
-                <button type="submit">Book Slot</button>
-            </form>
+            <h2>Confirm Booking</h2> {# Changed Title #}
+
+            {# Use paragraphs or spans to display info #}
+            <div class="booking-details">
+                <p><strong>Date:</strong> <span id="confirm-booking-date"></span></p>
+                <p><strong>Time:</strong> <span id="confirm-booking-time"></span></p>
+                <p><strong>Activity:</strong> <span id="confirm-booking-activity"></span></p>
+                <p><strong>User:</strong> <span id="confirm-booking-user">{{ user.username }}</span></p>
+            </div>
+
+            {# Confirmation Buttons #}
+            <div class="confirm-buttons" style="margin-top: 20px;">
+                <button id="booking-cancel-button" class="button button-secondary">Cancel</button>
+                {# This button will trigger the actual booking fetch #}
+                <button id="booking-confirm-button" class="button">Confirm Booking</button>
+            </div>
         </div>
     </div>
     {% endif %}
 
-    {# --- JavaScript for Tabs and other functions (Keep existing JS, add tab logic) --- #}
+    {# JavaScript #}
     <script>
-        // --- Existing Functions (Keep these) ---
+        // --- Function to Show Custom Message Modal ---
+        // Displays success/error feedback AFTER an action
+        function showMessageModal(message, isSuccess = true, actionAfterClose = null) {
+            const messageOverlay = document.getElementById('message-overlay');
+            const messageContent = messageOverlay?.querySelector('.message-content');
+            const messageTextElement = document.getElementById('message-text');
+            const messageOkButton = document.getElementById('message-ok-button');
+            const messageTitle = document.getElementById('message-title');
+
+            if (!messageOverlay || !messageTextElement || !messageOkButton || !messageContent || !messageTitle) {
+                console.error("Message modal elements not found! Check base.html.");
+                alert(message); // Fallback
+                if (actionAfterClose) { try { actionAfterClose(); } catch(e){ console.error("Error in actionAfterClose fallback:", e); } }
+                return;
+            }
+
+            messageTextElement.textContent = message;
+            messageTitle.textContent = isSuccess ? "Success" : "Error";
+            messageContent.classList.remove('error', 'success');
+            messageContent.classList.add(isSuccess ? 'success' : 'error');
+
+            const okClickListener = () => {
+                messageOverlay.style.display = 'none';
+                messageOkButton.onclick = null; // Remove listener
+                if (actionAfterClose) {
+                    try { actionAfterClose(); } catch(e) { console.error("Error executing actionAfterClose:", e); }
+                }
+            };
+            messageOkButton.onclick = okClickListener; // Assign listener
+
+            messageOverlay.style.display = 'flex'; // Show modal
+        }
+        // --- END Message Modal Function ---
+
+
+        // --- Function to Show Custom Confirmation Modal ---
+        // Displays a Yes/Cancel prompt BEFORE an action
+        function showConfirmModal(message, onConfirmCallback) {
+            const confirmOverlay = document.getElementById('confirm-overlay');
+            const confirmTextElement = document.getElementById('confirm-text');
+            const confirmYesButton = document.getElementById('confirm-yes-button');
+            const confirmCancelButton = document.getElementById('confirm-cancel-button');
+            // Optional: const confirmTitle = document.getElementById('confirm-title');
+
+            if (!confirmOverlay || !confirmTextElement || !confirmYesButton || !confirmCancelButton) {
+                 console.error("Confirmation modal elements not found! Check base.html.");
+                 // Fallback to default confirm
+                 if (confirm(message)) {
+                     if (onConfirmCallback) { try { onConfirmCallback(); } catch(e) { console.error("Error in onConfirm fallback:", e); }}
+                 }
+                 return;
+            }
+
+            confirmTextElement.textContent = message;
+            // Optional: confirmTitle.textContent = "Please Confirm";
+
+            const cancelListener = () => {
+                confirmOverlay.style.display = 'none';
+                confirmCancelButton.onclick = null;
+                confirmYesButton.onclick = null;
+            };
+
+            const confirmListener = () => {
+                confirmOverlay.style.display = 'none';
+                confirmCancelButton.onclick = null;
+                confirmYesButton.onclick = null;
+                if (onConfirmCallback) {
+                     try { onConfirmCallback(); } catch(e) { // Execute the action
+                         console.error("Error executing onConfirm callback:", e);
+                         showMessageModal(`An error occurred: ${e.message}`, false); // Show error in message modal
+                     }
+                }
+            };
+
+            // Assign listeners
+            confirmCancelButton.onclick = cancelListener;
+            confirmYesButton.onclick = confirmListener;
+
+            confirmOverlay.style.display = 'flex'; // Show modal
+        }
+        // --- END Confirmation Modal Function ---
+
+
+        // --- Date Change Function ---
         function changeDate() {
             let selectedDate = document.getElementById("selected-date").value;
             window.location.href = "?date=" + selectedDate;
         }
 
+
+        // --- MODIFIED Booking Confirmation Modal Logic ---
+        // Global variable to store details for the confirmation action
+        let currentBookingDetails = { timeSlot: null, dateSlot: null, activity: null };
+
         function openBookingForm(timeSlot, dateSlot, activity) {
-            document.getElementById("selected-time").value = timeSlot;
-            document.getElementById("selected-date-display").value = dateSlot;
-            document.getElementById("booking_type").value = activity;
-            document.getElementById("booking-overlay").style.display = "flex";
+            console.log("Opening booking confirmation for:", timeSlot, dateSlot, activity);
+            // Store details
+            currentBookingDetails.timeSlot = timeSlot;
+            currentBookingDetails.dateSlot = dateSlot;
+            currentBookingDetails.activity = activity;
+
+            // Populate display elements (ensure these IDs exist in your #booking-overlay HTML)
+            const dateEl = document.getElementById("confirm-booking-date");
+            const timeEl = document.getElementById("confirm-booking-time");
+            const activityEl = document.getElementById("confirm-booking-activity");
+            // const userEl = document.getElementById("confirm-booking-user"); // Username already shown via template
+
+            if(dateEl) dateEl.textContent = dateSlot;
+            if(timeEl) timeEl.textContent = timeSlot;
+            if(activityEl) activityEl.textContent = activity;
+
+            // Attach listeners to Confirm/Cancel buttons within THIS modal
+            const confirmBtn = document.getElementById('booking-confirm-button');
+            const cancelBtn = document.getElementById('booking-cancel-button');
+
+            if(!confirmBtn || !cancelBtn) {
+                 console.error("Booking confirmation buttons not found!");
+                 return;
+            }
+
+            const confirmClickListener = () => {
+                closeBookingForm(); // Close this modal
+                executeBooking();   // Trigger the fetch request
+            };
+
+            const cancelClickListener = () => {
+                closeBookingForm(); // Just close this modal
+            };
+
+            // Assign listeners
+            confirmBtn.onclick = confirmClickListener;
+            cancelBtn.onclick = cancelClickListener;
+
+            // Show the modal
+            const bookingOverlay = document.getElementById("booking-overlay");
+            if (bookingOverlay) {
+                 bookingOverlay.style.display = "flex";
+            } else {
+                 console.error("Booking overlay (#booking-overlay) not found!");
+            }
         }
 
         function closeBookingForm() {
-            document.getElementById("booking-overlay").style.display = "none";
+            const bookingOverlay = document.getElementById("booking-overlay");
+             if (bookingOverlay) {
+                 // Detach listeners
+                 const confirmBtn = document.getElementById('booking-confirm-button');
+                 const cancelBtn = document.getElementById('booking-cancel-button');
+                 if(confirmBtn) confirmBtn.onclick = null;
+                 if(cancelBtn) cancelBtn.onclick = null;
+                 bookingOverlay.style.display = "none";
+             }
         }
 
-        const bookingForm = document.getElementById("booking-form");
-        if (bookingForm) {
-            bookingForm.addEventListener("submit", function (event) {
-                event.preventDefault();
-                const formData = new FormData(this);
-                let bookingData = {};
-                formData.forEach((value, key) => bookingData[key] = value);
+        // Function containing the actual booking API call
+        function executeBooking() {
+            console.log("Executing booking fetch with details:", currentBookingDetails);
+             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+             // Use message modal for CSRF error
+             if (!csrfToken) { showMessageModal('CSRF token not found. Cannot book.', false); return; }
 
-                fetch("{% url 'api_book' %}", { // Ensure CSRF token is handled if needed
-                    method: "POST",
-                    headers: {
-                        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(bookingData)
-                })
-                .then(response => response.json())
-                .then(data => {
-                    alert(data.message);
-                    if(data.message.includes("created")) {
-                         closeBookingForm();
-                         location.reload();
-                    }
-                })
-                .catch(error => {
-                    console.error("Error:", error);
-                    alert("An error occurred during booking.");
-                });
-            });
+             if (!currentBookingDetails.timeSlot || !currentBookingDetails.dateSlot || !currentBookingDetails.activity) {
+                 showMessageModal("Error: Booking details missing.", false);
+                 return;
+             }
+
+             let bookingData = {
+                 start_time: currentBookingDetails.timeSlot,
+                 booking_date: currentBookingDetails.dateSlot,
+                 booking_type: currentBookingDetails.activity,
+                 name: "{{ user.username|escapejs }}" // Get username safely
+             };
+
+             fetch("{% url 'api_book' %}", {
+                 method: "POST",
+                 headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+                 body: JSON.stringify(bookingData)
+             })
+             .then(response => {
+                  if (!response.ok) { return response.json().then(errData => { throw new Error(errData.message || `Server error: ${response.status}`); }).catch(() => { throw new Error(`Server error: ${response.status}`); }); }
+                  return response.json();
+              })
+             .then(data => {
+                 // Use message modal for success feedback, reload after OK
+                 showMessageModal(data.message, true, () => { location.reload(); });
+             })
+             .catch(error => {
+                 console.error("Booking Execution Error:", error);
+                 // Use message modal for error feedback
+                 showMessageModal(`Booking failed: ${error.message}`, false);
+             });
         }
+        // --- END Booking Confirmation Modal Logic ---
 
-        function cancelBooking(bookingId, userId) { // Ensure userId is passed if needed by view logic
-             if (!confirm("Are you sure you want to cancel this booking?")) return;
-            fetch(`/cancel/${bookingId}/`, {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
-                    "Content-Type": "application/json"
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                 if(data.message.includes("cancelled")) {
-                     location.reload();
-                 }
-            })
-            .catch(error => {
-                 console.error("Error:", error);
-                 alert("An error occurred cancelling the booking.");
-            });
+
+        // --- Cancel Booking Function (Uses Confirmation Modal) ---
+        function cancelBooking(bookingId, userId) {
+             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+             if (!csrfToken) { showMessageModal('CSRF token not found. Cannot cancel.', false); return; }
+
+             showConfirmModal("Are you sure you want to cancel this booking?", () => {
+                 // This code runs if user clicks "Confirm"
+                 console.log(`Proceeding with cancel for booking ${bookingId}`);
+                 fetch(`/cancel/${bookingId}/`, {
+                     method: "POST",
+                     headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" }
+                 })
+                 .then(response => {
+                      if (!response.ok) { return response.json().then(errData => { throw new Error(errData.message || `Server error: ${response.status}`); }).catch(() => { throw new Error(`Server error: ${response.status}`); }); }
+                      return response.json();
+                  })
+                 .then(data => {
+                     showMessageModal(data.message, true, () => { location.reload(); }); // Show success in message modal
+                 })
+                 .catch(error => {
+                      console.error("Cancellation Error:", error);
+                      showMessageModal(`Cancellation failed: ${error.message}`, false); // Show error in message modal
+                 });
+             }); // End showConfirmModal
         }
+        // --- End Cancel Booking Function ---
 
+
+        // --- Competition Join/Leave Functions (Still use alert/confirm) ---
         function leaveCompetition(competitionId) {
              if (!confirm("Are you sure you want to leave this competition?")) return;
-            fetch(`/leave-competition/${competitionId}/`, {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
-                    "Content-Type": "application/json"
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                if(data.success) {
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error("Error leaving competition:", error);
-                alert("An error occurred while trying to leave the competition.");
-            });
+             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+             if (!csrfToken) { alert('CSRF token not found.'); return; }
+             // Consider changing alert(...) to showMessageModal(...) later if desired
+             fetch(`/leave-competition/${competitionId}/`, { method: "POST", headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" }, })
+             .then(response => response.json())
+             .then(data => { alert(data.message); if(data.success) { location.reload(); } })
+             .catch(error => { console.error("Error leaving competition:", error); alert("An error occurred while trying to leave the competition."); });
         }
 
         function joinCompetition(competitionId) {
             if (!confirm("Are you sure you want to join this competition?")) return;
-            fetch(`/join-competition/${competitionId}/`, {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
-                    "Content-Type": "application/json"
-                },
-            })
+             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+             if (!csrfToken) { alert('CSRF token not found.'); return; }
+             // Consider changing alert(...) to showMessageModal(...) later if desired
+            fetch(`/join-competition/${competitionId}/`, { method: "POST", headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" }, })
             .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                if(data.success) {
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error("Error joining competition:", error);
-                alert("An error occurred while trying to join the competition.");
-            });
+            .then(data => { alert(data.message); if(data.success) { location.reload(); } })
+            .catch(error => { console.error("Error joining competition:", error); alert("An error occurred while trying to join the competition."); });
         }
+        // --- End Competition Functions ---
 
-        // --- NEW: JavaScript for Tab Switching ---
+
+        // --- Tab Switching Logic ---
         document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM Loaded. Setting up tabs...");
             const tabLinks = document.querySelectorAll('.tab-link');
             const tabPanes = document.querySelectorAll('.tab-pane');
-
-            tabLinks.forEach(link => {
-                link.addEventListener('click', function() {
-                    const targetPaneId = this.getAttribute('data-target');
-
-                    // Remove active class from all links and panes
-                    tabLinks.forEach(l => l.classList.remove('active'));
-                    tabPanes.forEach(p => p.classList.remove('active'));
-
-                    // Add active class to the clicked link and target pane
-                    this.classList.add('active');
-                    const targetPane = document.getElementById(targetPaneId);
-                    if (targetPane) {
-                        targetPane.classList.add('active');
-                    }
+            if (tabLinks.length > 0 && tabPanes.length > 0) {
+                console.log(`Found ${tabLinks.length} tab links and ${tabPanes.length} panes.`);
+                tabLinks.forEach((link, index) => {
+                    link.addEventListener('click', function(event) {
+                        console.log("Tab link clicked:", this.dataset.target);
+                        const targetPaneId = this.getAttribute('data-target');
+                        tabLinks.forEach(l => l.classList.remove('active'));
+                        tabPanes.forEach(p => p.classList.remove('active'));
+                        this.classList.add('active');
+                        const targetPane = document.getElementById(targetPaneId);
+                        if (targetPane) { targetPane.classList.add('active'); }
+                        else { console.error("Target pane not found:", targetPaneId); }
+                    });
                 });
-            });
+            } else { console.warn("Tab navigation elements not found."); }
         });
         // --- End Tab JS ---
 
     </script>
+
+Kilder og relatert innhold
 
 {% endblock %}

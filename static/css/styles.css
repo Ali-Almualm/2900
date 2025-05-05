@@ -76,7 +76,74 @@ h1, h2, h3 {
     padding-top: 15px; /* Add some space above the content */
     animation: fadeIn 0.5s; /* Optional fade-in animation */
 }
+.pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center; /* Vertically align H3 and the group */
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+.pane-header h3 {
+    margin: 0;
+    font-size: 1.4em;
+}
 
+/* New group for prompt and button */
+.prompt-action-group {
+    display: flex; /* Align prompt and button horizontally */
+    align-items: center; /* Vertically align prompt text and button */
+    gap: 8px; /* Space between prompt text and button */
+}
+
+/* Updated style for the availability prompt text */
+.availability-prompt {
+    font-size: 0.9em;
+    color: #555;
+    margin: 0; /* Remove previous margins */
+    padding: 0; /* Remove previous padding/background */
+    border: none;
+    background-color: transparent;
+    /* No link styling needed here as link is now just the button */
+    
+    white-space: nowrap; /* Prevent prompt text wrapping */
+}
+
+/* Style for the specific "Set Availability" button */
+.button-set-availability {
+    padding: 6px 12px;
+    font-size: 0.9em;
+    text-decoration: none;
+    background-color: #007bff; /* Example: Standard blue */
+    color: white;
+    border-color: #007bff;
+    white-space: nowrap; /* Prevent button text wrapping */
+    /* Inherits from a.button below if defined */
+}
+.button-set-availability:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+/* General styles for links styled as buttons (ensure display is correct) */
+a.button, button.button { /* Added button.button for consistency */
+    display: inline-block; /* Allows padding, margins, vertical alignment */
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    vertical-align: middle; /* Helps align with text */
+    text-decoration: none;
+    background-color: #007bff; /* Default */
+    color: white;
+    line-height: 1.5; /* Standard line height for buttons */
+}
+a.button:hover, button.button:hover {
+     background-color: #0056b3;
+}
 .tab-pane.active {
     display: block; /* Show active pane */
 }
@@ -95,6 +162,262 @@ h1, h2, h3 {
     vertical-align: middle; /* Align with date input */
 }
 
+.availability-prompt {
+    font-size: 0.9em; /* Slightly smaller text */
+    color: #555; /* Slightly muted color */
+    margin-top: -5px; /* Adjust spacing relative to the header above */
+    margin-bottom: 15px; /* Space before the table starts */
+    padding: 8px 10px; /* Add some padding */
+    background-color: #f8f9fa; /* Very light background */
+    border: 1px solid #e9ecef; /* Subtle border */
+    border-radius: 4px;
+    line-height: 1,5; /* Adjust line-height slightly if needed for alignment */
+
+    max-width: fit-content; /* Make background only as wide as content */
+}
+
+.availability-prompt a {
+    color: #0056b3; /* Make link stand out slightly */
+    font-weight: 600; /* Slightly bolder link */
+    text-decoration: underline;
+}
+.availability-prompt a:hover {
+    color: #003d80;
+}
+
+
+/* Ensure pane header style provides enough space */
+.pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* margin-bottom: 15px; */ /* Removed bottom margin here */
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 5px; /* Reduced space before prompt */
+}
+/* New group for prompt and button */
+.prompt-action-group {
+    display: flex;
+    /* Change alignment from center to baseline */
+    align-items: baseline; /* <-- MODIFIED THIS LINE */
+    gap: 8px; /* Space between prompt text and button */
+}
+
+/* Styles for the prompt text (usually fine as is) */
+.availability-prompt {
+    font-size: 0.9em;
+    color: #555;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    white-space: nowrap;
+}
+
+/* Ensure button styles don't interfere (padding/line-height are main factors) */
+.button-set-availability {
+    padding: 6px 12px;
+    font-size: 0.9em;
+    line-height: 1.5; /* Ensure line-height is sensible */
+    text-decoration: none;
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+    white-space: nowrap;
+    /* Inherits from a.button below if defined */
+    display: inline-block; /* Ensure consistent display */
+    vertical-align: middle; /* Might help in some contexts, but baseline is usually better */
+}
+
+/* static/css/styles.css */
+
+/* --- Match Availability Page Enhancements --- */
+
+/* Container for Date Input and Grid */
+.time-selector {
+    margin: 25px 0; /* Add more vertical space around this section */
+    padding: 15px;  /* Add some padding inside */
+    background-color: #fdfdfd; /* Slightly off-white background */
+    border: 1px solid #eee; /* Subtle border */
+    border-radius: 5px;
+    max-width: 900px; /* Increase max-width slightly */
+}
+
+/* Style the "Date:" label and input */
+.time-selector label {
+    margin-right: 8px;
+    font-weight: bold;
+    vertical-align: middle; /* Align label with input */
+}
+.time-selector input[type="date"] {
+    padding: 6px 8px; /* Adjust padding */
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1em; /* Match surrounding text */
+    vertical-align: middle; /* Align input */
+}
+
+/* Add or ensure this style exists */
+nav a.active-nav {
+    font-weight: bold;
+    color: #0056b3; /* Example active color - choose one that fits */
+    /* text-decoration: underline; */ /* Optional underline */
+    /* Or use border-bottom: 2px solid #0056b3; */
+}
+
+/* Ensure default nav link styles don't override active state too much */
+nav a {
+    margin-right: 8px;
+    margin-left: 8px;
+    text-decoration: none; /* Make sure default isn't underlined if active is */
+    color: #007bff; /* Default link color */
+    transition: color 0.2s ease; /* Smooth transition if needed */
+}
+nav a:hover {
+    color: #0056b3; /* Hover color */
+    text-decoration: underline; /* Optional hover underline */
+}
+
+/* Style for user welcome (adjust if needed) */
+.user-welcome {
+    color: #333;
+    font-weight: bold;
+    font-size: 1.1em;
+    white-space: nowrap;
+}
+
+/* Header layout */
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.header-main h1 { margin: 0; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) { /* Adjust breakpoint as needed */
+     nav a, nav span.user-welcome { /* Stack nav items vertically */
+         display: block;
+         margin: 5px 0;
+         padding: 5px 0; /* Add some padding */
+         border-bottom: 1px solid #eee; /* Optional separators */
+     }
+     nav a:last-child, nav span.user-welcome {
+         border-bottom: none;
+     }
+     nav a.active-nav {
+         /* Adjust active style for vertical layout if needed */
+         background-color: #e7f3ff; /* Example background highlight */
+         border-radius: 4px;
+         padding-left: 5px;
+         padding-right: 5px;
+     }
+}
+
+.time-selector {
+    margin-top: 25px; /* Add space above the section */
+    margin-bottom: 25px;
+}
+.time-selector h3 {
+    margin-bottom: 5px;
+}
+.time-selector p {
+    margin-bottom: 20px;
+    color: #555;
+    font-size: 0.95em;
+}
+.time-selector label { /* Style the "Date:" label */
+    margin-right: 5px;
+    font-weight: bold;
+}
+.time-selector input[type="date"] { /* Style the date input */
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-right: 10px;
+    font-size: 1em; /* Match surrounding text */
+}
+
+
+/* The grid container */
+.time-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 20px auto; /* Use auto margin for centering */
+    max-width: 1200px; /* <-- INCREASED VALUE (Adjust as desired) */
+    padding: 10px;
+    background-color: #fdfdfd;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+}
+
+/* Individual time slot styling */
+.time-slot {
+    padding: 10px 5px; /* Increase padding */
+    text-align: center;
+    border: 1px solid #d0d0d0; /* Slightly darker border */
+    cursor: pointer;
+    background-color: #f9f9f9; /* Default background */
+    font-size: 0.9em;
+    border-radius: 4px; /* More rounded corners */
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease; /* Smooth transitions */
+    user-select: none;
+    color: #444; /* Default text color */
+}
+
+/* Clearer Hourly Blocks - using the new class */
+.time-slot.hour-start {
+   border-left: 2px solid #a0a0a0; /* Add a stronger left border to the :00 slot */
+   /* Or use background-color: #f0f0f0; for a background approach */
+}
+/* Optional: Add space above new hour rows if needed (more complex with pure grid) */
+
+
+/* Enhanced Hover state */
+.time-slot:hover {
+    background-color: #e6f7ff; /* Lighter blue hover */
+    border-color: #007bff;
+    transform: translateY(-1px); /* Subtle lift effect */
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.1);
+}
+
+/* Focus state for accessibility */
+.time-slot:focus {
+    outline: 2px solid #0056b3; /* Clear focus outline */
+    outline-offset: 1px;
+}
+
+/* Enhanced Selected state */
+.time-slot.selected-slot {
+    background-color: #28a745; /* Brighter green */
+    border-color: #1c7430; /* Darker green border */
+    color: #fff; /* White text */
+    font-weight: bold;
+    /* transform: scale(1.02); Optional slightly larger effect */
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); /* Inner shadow */
+}
+.time-slot.selected-slot:hover {
+     background-color: #218838; /* Slightly darker green on hover */
+     border-color: #1c7430;
+}
+
+/* --- End Match Availability Enhancements --- */
+
+/* Ensure general page styles are okay */
+h1, h3 { /* Headings on the page */
+    margin-bottom: 0.5em;
+}
+p { /* Paragraph above grid */
+    margin-bottom: 1.5em;
+    color: #555;
+    line-height: 1.6;
+}
 /* Optional: Specific styling if using <a> tags instead of <button> for nav */
 a.button {
     /* Inherit general button styles or define specific ones */
@@ -184,33 +507,106 @@ a.button:hover {
     width: 90%;
     max-width: 1400px; /* Or 1200px, 1600px, etc. */
 }
-/* Timetable table */
+
 .timetable {
-    border-collapse: collapse;
     width: 100%;
-    background-color: #fff;
+    border-collapse: collapse;
+    /* table-layout: fixed; */ /* Optional: May help enforce width but can have side effects */
 }
 
 .timetable th, .timetable td {
-    border: 1px solid #ccc;
-    padding: 8px 12px;
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+/* Set a fixed width for the Action column header and cells */
+.timetable th.action-column,
+.timetable td.action-column {
+    width: 150px; /* Adjust this width as needed */
+    /* Tweak text alignment if desired */
+    /* text-align: center; */
+}
+
+/* Optional: Control button layout within the fixed width cell */
+.timetable td.action-column {
+    /* Allow buttons to wrap onto next line if needed */
+     white-space: normal;
+
+    /* OR Use Flexbox for more control (optional) */
+    /* display: flex;
+    flex-wrap: wrap; /* Allow wrapping */
+    /* justify-content: center; /* Center buttons */
+    /* align-items: center;
+    gap: 5px; /* Space between buttons */
+}
+
+/* Ensure buttons have consistent styles */
+.timetable .button {
+    /* Your base button styles */
+    padding: 6px 10px;
+    margin: 2px; /* Add small margin for spacing if they wrap */
+    font-size: 0.9em;
+    cursor: pointer;
+    border-radius: 4px;
+    border: none;
+    text-decoration: none;
+    display: inline-block; /* Allow margin/padding */
+    vertical-align: middle;
     text-align: center;
 }
-
-.timetable thead {
-    background-color: #f2f2f2;
+.timetable .button-small { /* Ensure small button styles are defined */
+     padding: 4px 8px;
+     font-size: 0.85em;
 }
 
-/* Booked vs Available styling */
-.timetable td.status-booked {
-    color: red;
-    font-weight: bold;
+
+.button-register-results {
+    /* Add specific styles if needed, or inherit from .button.button-small */
+    background-color: #ffc107; /* Example: Yellow/warning color */
+    color: #333;
+}
+.button-register-results:hover {
+    background-color: #e0a800;
 }
 
-.timetable td.status-available {
-    color: green;
-    font-weight: bold;
+/* Style for disabled buttons */
+.button-disabled {
+    background-color: #adb5bd; /* Grey background */
+    border-color: #adb5bd;
+    color: #f8f9fa; /* Light text */
+    cursor: not-allowed; /* Indicate non-interactive */
+    opacity: 0.75; /* Slightly faded */
 }
+/* Prevent hover effects on disabled button */
+.button-disabled:hover {
+    background-color: #adb5bd; /* Keep color the same */
+    border-color: #adb5bd;
+    color: #f8f9fa;
+    opacity: 0.75;
+}
+
+/* Specific button colors (ensure these exist) */
+.button-info { background-color: #17a2b8; color: white; }
+.button-danger { background-color: #dc3545; color: white; }
+.button-success { background-color: #28a745; color: white; }
+.button-book { background-color: #007bff; color: white; } /* Example */
+
+/* Styles for non-button text in action column */
+.timetable td.action-column span,
+.timetable td.action-column p {
+    display: inline-block; /* Allow alignment */
+    vertical-align: middle;
+    font-size: 0.9em;
+    padding: 6px 0; /* Match button vertical padding roughly */
+}
+.creator-tag, .status-tag, .login-prompt {
+     color: #6c757d;
+     font-style: italic;
+}
+.status-full { color: orange; font-weight: bold; }
+.status-closed { color: #dc3545; }
 header {
     border-bottom: 1px solid #eee; /* Optional: add a separator below header */
     padding-bottom: 10px;
@@ -280,16 +676,70 @@ nav a {
 }
 
 /* Overlay (centered popup) */
+/* Overlay background - reuse existing .overlay style if suitable */
 .overlay {
-    display: none;
+    display: none; /* Hidden by default */
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6); /* Semi-transparent background */
     justify-content: center;
     align-items: center;
+    z-index: 1000; /* Ensure it's on top */
+}
+
+/* Specific container for message overlay if needed */
+.message-overlay-container {
+     /* Add specific styles if needed, often inherits from .overlay */
+}
+
+/* Content box for the message */
+.message-content {
+    background: white;
+    padding: 25px 30px; /* Adjust padding */
+    border-radius: 8px;
+    width: auto; /* Auto width based on content */
+    min-width: 300px; /* Minimum width */
+    max-width: 500px; /* Maximum width */
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    text-align: center; /* Center text and button */
+    border-top: 5px solid #007bff; /* Default blue top border */
+}
+
+.message-content h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.message-content p {
+    margin-top: 15px;
+    margin-bottom: 25px; /* More space before button */
+    color: #444;
+    line-height: 1.5;
+}
+
+#message-ok-button {
+    /* Inherit from .button or style specifically */
+    padding: 8px 25px;
+    min-width: 80px;
+}
+
+/* Optional: Styling for success/error states */
+.message-content.success {
+    border-top-color: #28a745; /* Green border for success */
+}
+.message-content.success h3 {
+    color: #155724;
+}
+
+.message-content.error {
+    border-top-color: #dc3545; /* Red border for error */
+}
+.message-content.error h3 {
+    color: #721c24;
 }
 
 .button-info {
@@ -379,3 +829,173 @@ button:hover {
     background-color: #0056b3;
 }
 
+/* static/css/styles.css */
+
+/* --- Django Messages Styling --- */
+.messages-container { /* Optional container */
+    max-width: 1200px; /* Example max width */
+    margin: 0 auto 15px auto; /* Center and add space below */
+}
+
+ul.messages {
+    list-style: none;
+    padding: 0;
+    margin: 0; /* Reset default list margin */
+}
+
+.messages li {
+    padding: 12px 20px;
+    margin-bottom: 15px; /* Space between messages */
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 0.95em;
+    display: block; /* Ensure it takes full width */
+}
+
+/* Style based on message tags (error, success, warning, info) */
+.messages li.success {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.messages li.error {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.messages li.warning {
+    background-color: #fff3cd;
+    border-color: #ffeeba;
+    color: #856404;
+}
+
+.messages li.info {
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
+}
+/* --- End Messages Styling --- */
+
+
+.confirm-overlay-container {
+    /* Inherits .overlay styles */
+}
+
+/* Content box for confirmation */
+.confirm-content {
+    background: white;
+    padding: 25px 30px;
+    border-radius: 8px;
+    width: auto;
+    min-width: 320px; /* Adjust as needed */
+    max-width: 500px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    border-top: 5px solid #ffc107; /* Example: Yellow/warning border for confirmation */
+}
+
+.confirm-content h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.confirm-content p {
+    margin-top: 15px;
+    margin-bottom: 25px;
+    color: #444;
+    line-height: 1.5;
+}
+
+/* Container for the confirmation buttons */
+.confirm-buttons {
+    display: flex; /* Align buttons horizontally */
+    justify-content: center; /* Center buttons */
+    gap: 15px; /* Space between buttons */
+    margin-top: 10px;
+}
+
+/* Styling for confirm/cancel buttons (use general .button and specific classes) */
+#confirm-cancel-button {
+    /* Style using .button and .button-secondary (if defined) */
+    background-color: #6c757d; /* Grey */
+}
+#confirm-cancel-button:hover {
+    background-color: #5a6268;
+}
+
+#confirm-yes-button {
+     /* Style using .button and maybe .button-danger or a specific class */
+     /* Example: Make confirm button more prominent */
+     /* background-color: #dc3545; */ /* Red */
+     background-color: #007bff; /* Or standard blue */
+}
+#confirm-yes-button:hover {
+    /* background-color: #c82333; */
+    background-color: #0056b3;
+}
+
+/* Ensure general .button styles cover basics */
+.button {
+    padding: 8px 20px; /* Consistent padding */
+    /* ... other general button styles ... */
+}
+.button-secondary { /* Example secondary style */
+     background-color: #6c757d;
+     color: white;
+}
+.button-secondary:hover { background-color: #5a6268; }
+.booking-confirmation-content {
+    /* Inherits from .overlay-content */
+    text-align: left; /* Align text left for details */
+    width: auto;
+    min-width: 350px; /* Adjust width */
+    max-width: 500px;
+}
+
+.booking-confirmation-content h2 {
+    text-align: center; /* Center title */
+    margin-bottom: 20px;
+}
+
+.booking-details p {
+    margin: 8px 0;
+    font-size: 1em;
+    line-height: 1.4;
+    border-bottom: 1px solid #eee; /* Separator lines */
+    padding-bottom: 8px;
+}
+.booking-details p:last-child {
+    border-bottom: none;
+}
+
+.booking-details strong {
+    display: inline-block;
+    width: 110px; /* Align labels */
+    color: #555;
+}
+
+/* Use existing confirm-buttons class for layout */
+.confirm-buttons {
+    display: flex;
+    justify-content: flex-end; /* Align buttons to the right */
+    gap: 10px;
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid #eee; /* Separator above buttons */
+}
+
+/* Ensure button styles are applied */
+#booking-cancel-button {
+    /* Style using .button and .button-secondary */
+    background-color: #6c757d;
+}
+#booking-cancel-button:hover { background-color: #5a6268; }
+
+#booking-confirm-button {
+    /* Style using .button */
+    background-color: #007bff;
+}
+#booking-confirm-button:hover { background-color: #0056b3; }

@@ -1,57 +1,81 @@
 {# templates/base.html or bookings/templates/bookings/base.html #}
-
 <html lang="en">
 <head>
     {% load static %}
     {# ... other head elements ... #}
-    <meta name="csrf-token" content="{{ csrf_token }}">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}BoockMe{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    {# --- Remove style for username display from here if added before --- #}
-    {# We will add new styles in styles.css #}
+    <style>
+        /* Basic active nav link style */
+        nav a.active-nav {
+            font-weight: bold;
+            color: #0056b3; /* Example active color */
+            text-decoration: underline;
+        }
+    </style>
 </head>
 <body>
     <header>
-        {# --- NEW: Wrapper for Title and Username --- #}
         <div class="header-main">
             <h1>BoockMe</h1>
-            {# --- MOVED USERNAME DISPLAY --- #}
             {% if user.is_authenticated %}
             <span class="user-welcome">Welcome, {{ user.username }}!</span>
             {% endif %}
-            {# --- END MOVED USERNAME DISPLAY --- #}
         </div>
-        {# --- End Wrapper --- #}
 
         <nav>
-            <a href="{% url 'index' %}">Home</a> |
-            <a href="{% url 'pool' %}">Pool</a> |
-            <a href="{% url 'switch' %}">Nintendo Switch</a> |
-            <a href="{% url 'table_tennis' %}">Table Tennis</a> |
+            {# Renamed Home and added active check #}
+            <a href="{% url 'index' %}" class="{% if request.resolver_match.url_name == 'index' %}active-nav{% endif %}">Timetable</a> |
 
-            <a href="{% url 'leaderboard' %}">Leaderboard</a> |
-        
-            
+            {# REMOVED Pool, Switch, Table Tennis links #}
+            {# <a href="{% url 'pool' %}">Pool</a> | #}
+            {# <a href="{% url 'switch' %}">Nintendo Switch</a> | #}
+            {# <a href="{% url 'table_tennis' %}">Table Tennis</a> | #}
+
+            {# Added active check to other links (use appropriate url_names) #}
+            <a href="{% url 'find_matches' activity_type='pool' %}" class="{% if request.resolver_match.url_name == 'find_matches' %}active-nav{% endif %}">Find Matches</a> |
+            <a href="{% url 'match_history' %}" class="{% if request.resolver_match.url_name == 'match_history' %}active-nav{% endif %}">Match History</a> |
+
             {% if user.is_authenticated %}
-                <a href="{% url 'select_match_availability_activity' %}">Set Match Availability</a> |
-                <a href="{% url 'find_matches' activity_type='pool' %}">Find Matches</a> |
-                <a href="{% url 'create_competition' %}">Create Competition</a> |
-                <a href="{% url 'match_history' %}">Match History</a> |
-                <a href="{% url 'profile' %}">Profile</a> |
-                <a href="{% url 'logout' %}">Logout</a>
-                {# Username span removed from here #}
+                <a href="{% url 'select_match_availability_activity' %}" class="{% if request.resolver_match.url_name == 'select_match_availability_activity' or request.resolver_match.url_name == 'match_availability' %}active-nav{% endif %}">Set Availability</a> |
+                <a href="{% url 'create_competition' %}" class="{% if request.resolver_match.url_name == 'create_competition' %}active-nav{% endif %}">Create Competition</a> |
+                <a href="{% url 'logout' %}" >Logout</a>
+                {# Username span already moved #}
             {% else %}
-                <a href="{% url 'login' %}">Login</a> |
-                <a href="{% url 'register' %}">Register</a>
+                <a href="{% url 'login' %}" class="{% if request.resolver_match.url_name == 'login' %}active-nav{% endif %}">Login</a> |
+                <a href="{% url 'register' %}" class="{% if request.resolver_match.url_name == 'register' %}active-nav{% endif %}">Register</a>
             {% endif %}
 
             {% if user.is_staff %}
-                | <a href="{% url 'admin:index' %}">Admin</a>
+                 | <a href="{% url 'admin:index' %}">Admin</a>
             {% endif %}
         </nav>
     </header>
+    {# --- STANDARD MESSAGE DISPLAY AREA --- #}
+    {% if messages %}
+    {# --- Simple Message Modal --- #}
+    <div id="message-overlay" class="overlay message-overlay-container" style="display: none;">
+        <div class="overlay-content message-content">
+            <h3 id="message-title">Notification</h3>
+            <p id="message-text" style="margin-top: 15px; margin-bottom: 20px;">Sample message text.</p>
+            <button id="message-ok-button" class="button">OK</button>
+        </div>
+    </div>
+
+    <div id="confirm-overlay" class="overlay confirm-overlay-container" style="display: none;"> {# Added specific class #}
+        <div class="overlay-content confirm-content"> {# Added specific class #}
+            <h3 id="confirm-title">Confirm Action</h3>
+            <p id="confirm-text" style="margin-top: 15px; margin-bottom: 20px;">Are you sure?</p>
+            <div class="confirm-buttons">
+                 {# Note: Button IDs and potentially classes for styling #}
+                <button id="confirm-cancel-button" class="button button-secondary">Cancel</button>
+                <button id="confirm-yes-button" class="button button-danger">Confirm</button> {# Example: Danger style for confirm #}
+            </div>
+        </div>
+    </div>
+    {# --- END Message Modal --- #}
+    {% endif %}
+    {# --- END MESSAGE DISPLAY AREA --- #}
 
     <main>
         {% block content %}{% endblock %}

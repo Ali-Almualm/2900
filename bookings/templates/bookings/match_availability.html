@@ -14,27 +14,66 @@
 <h3>Click to Select Available Times (08:00 - 23:45)</h3>
 <p>Green slots indicate your current availability. Click any slot between 08:00 and midnight to automatically add or remove your availability for that specific time.</p>
 
+{# --- ADDED Date Navigation Buttons & Input --- #}
+<div class="date-selector" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+    {# Previous Day Button #}
+    <a href="{% url 'match_availability' activity_type=activity_type %}?date={{ previous_date }}" class="button date-nav-button">&lt; Prev</a>
+
+    {# Date Input #}
+    <div> {# Wrap label and input #}
+        <label for="selected-date" style="margin-right: 5px;">Date:</label>
+        {# ID matches the JS listener #}
+        <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}">
+    </div>
+
+    {# Today Button - Only show if not viewing today #}
+    {% if selected_date|date:'Y-m-d' != today_date %}
+        <a href="{% url 'match_availability' activity_type=activity_type %}?date={{ today_date }}" class="button date-nav-button">Today</a>
+    {% endif %}
+
+    {# Next Day Button #}
+    <a href="{% url 'match_availability' activity_type=activity_type %}?date={{ next_date }}" class="button date-nav-button">Next &gt;</a>
+</div>
+{# --- END Date Navigation Buttons --- #}
+
 <div class="time-selector">
-    {% csrf_token %} {# <--- ADD THIS LINE HERE #}
-    <label for="selected-date">Date:</label>
-    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}">
+    {% csrf_token %} 
+    <!-- <label for="selected-date">Date:</label>
+    <input type="date" id="selected-date" value="{{ selected_date|date:'Y-m-d' }}"> -->
 
     <div class="time-grid">
-        {# Grid generation loop remains the same #}
-        {% for hour in '8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'|split:',' %}
-            {% for minute in '00,15,30,45'|split:',' %}
-                {% with slot_time_str=hour|stringformat:"02s"|add:":"|add:minute %}
-                <div
-                    class="time-slot{% if slot_time_str in existing_availability_times %} selected-slot{% endif %}"
-                    data-time="{{ slot_time_str }}">
-                    {{ slot_time_str }}
-                </div>
+        {% for hour_num in hours_range %} {# Loop through numbers from the view context #}
+            {% for minute_str in minutes_list %} {# Loop through minute strings from context #}
+    
+                {% comment %} Use "02d" to format the integer hour_num with a leading zero {% endcomment %}
+                {% with formatted_hour=hour_num|stringformat:"02d" %} 
+                {% with slot_time_str=formatted_hour|add:":"|add:minute_str %}
+    
+                    {% comment %}
+                    {% if hour_num == 8 or hour_num == 9 %} 
+                        <span style="display:block; font-size: 0.7em; color: red; background: yellow; padding: 2px;">
+                            Template DEBUG: Slot="{{ slot_time_str }}", InSet? {% if slot_time_str in existing_availability_times %}YES{% else %}NO{% endif %}
+                        </span>
+                    {% endif %}
+                    {% endcomment %}
+    
+                    <div
+                        class="time-slot{% if minute_str == '00' %} hour-start{% endif %}{% if slot_time_str in existing_availability_times %} selected-slot{% endif %}"
+                        data-time="{{ slot_time_str }}"> {# Ensure data-time also uses the zero-padded string #}
+                        {{ slot_time_str }}
+                    </div>
+                {% endwith %}
                 {% endwith %}
             {% endfor %}
         {% endfor %}
     </div>
-    {# Save button removed #}
-</div>
+    
+    {% comment %}
+    <div style="margin-top: 20px; padding: 10px; border: 1px solid blue; font-size: 0.8em;">
+        <strong style="color: blue;">Template DEBUG - Full Set Passed from View:</strong>
+        <pre>{{ existing_availability_times }}</pre>
+    </div>
+    {% endcomment %}</div>
 
 {# --- JavaScript Block (Keep as is from previous step) --- #}
 <script>
@@ -109,65 +148,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<style>
-/* Styles for the time grid and selection (Keep as is) */
-.time-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
-    gap: 5px;
-    margin: 20px 0;
-    max-width: 600px; /* Adjust width as needed */
-}
-
-.time-slot {
-    padding: 8px 5px;
-    text-align: center;
-    border: 1px solid #ddd;
-    cursor: pointer;
-    background-color: #f9f9f9;
-    font-size: 0.9em;
-    border-radius: 3px;
-    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
-    user-select: none;
-}
-
-.time-slot:hover {
-    background-color: #e9f7ff;
-    border-color: #aedcff;
-}
-
-.time-slot.selected-slot {
-    background-color: #d4edda; /* Light green */
-    border-color: #c3e6cb;
-    color: #155724;
-    font-weight: bold;
-}
-
-/* Other necessary styles */
-.error-message {
-    color: red;
-    padding: 10px;
-    margin: 10px 0;
-    background-color: #ffeeee;
-    border: 1px solid #ffcccc;
-    border-radius: 4px;
-}
-
-.time-selector { /* Container for date input and grid */
-    margin: 15px 0;
-}
-.time-selector label {
-    margin-right: 5px;
-    font-weight: bold;
-}
-.time-selector input[type="date"] {
-    padding: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    margin-right: 10px; /* Space between date and grid */
-}
-
-/* No need for #update-availability button styles */
-
-</style>
 {% endblock %}

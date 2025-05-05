@@ -8,6 +8,7 @@ from django import forms
 from django.http import JsonResponse
 from datetime import datetime, timedelta, date, time
 from django.utils import timezone
+from django.conf import settings
 
 from django.contrib import messages
 from django.urls import reverse # For redirects
@@ -78,33 +79,47 @@ def api_book(request):
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
 @login_required
-@csrf_exempt
+@csrf_exempt # Or handle CSRF token
 def cancel_booking(request, booking_id):
-    if request.method == "POST":
+    if request.method == "POST": # Assuming POST for cancellation now
         booking = get_object_or_404(Booking, id=booking_id)
-        if booking.name == request.user.username:
+        # Ensure only the user who booked it can cancel
+        # Adjust this check based on your user_id field type and logic
+        can_cancel = False
+        if request.user.is_authenticated and str(request.user.id) == booking.user_id:
+             can_cancel = True
+        # Optional: Allow opponent to cancel? Needs careful consideration.
+        # elif booking.opponent and request.user.id == booking.opponent.id:
+        #     can_cancel = True
+
+        if can_cancel:
+            booking_details = f"{booking.get_booking_type_display()} at {booking.start_time.strftime('%H:%M')}"
             booking.delete()
+            messages.success(request, f"Booking for {booking_details} cancelled successfully.") # Use Django messages
+            # Return JSON still, as JS expects it, but message is now handled by Django framework
             return JsonResponse({"message": "Booking cancelled successfully."})
         else:
-            return JsonResponse({"message": "You are not authorized to cancel this booking." + request.user.username}, status=403)
+            messages.error(request, "You are not authorized to cancel this booking.") # Use Django messages
+            return JsonResponse({"message": "You are not authorized to cancel this booking."}, status=403)
+    messages.error(request, "Invalid request method.") # Use Django messages
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
 
 def index(request):
     # --- Date Calculation ---
-    today_date = date.today()
+    now = timezone.now() # Get current time ONCE
+    today_date = now.date() # Use today's date from 'now'
     date_str = request.GET.get('date', today_date.strftime('%Y-%m-%d'))
     try:
         selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
-        selected_date = today_date # Default to today if date format is invalid
+        selected_date = today_date
 
     previous_date = selected_date - timedelta(days=1)
     next_date = selected_date + timedelta(days=1)
     # --- End Date Calculation ---
 
     time_slots = []
-    # Use selected_date which is now guaranteed to be a date object
     start_time_dt = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
     end_time_dt = datetime.combine(selected_date, datetime.min.time()).replace(hour=23, minute=59)
 
@@ -114,7 +129,10 @@ def index(request):
         time_slots.append((current, slot_end))
         current = slot_end
 
-    bookings = Booking.objects.filter(start_time__date=selected_date)
+    # Fetch bookings and competitions, including opponent for bookings
+    bookings = Booking.objects.filter(
+        start_time__date=selected_date
+    ).select_related('opponent') # Eager load opponent
     competitions = Competition.objects.filter(start_time__date=selected_date)
 
     ACTIVITY_TYPES = ["pool", "switch", "table_tennis"]
@@ -122,26 +140,31 @@ def index(request):
 
     for slot_start_time, slot_end_time in time_slots:
         time_slot_str = f"{slot_start_time.strftime('%H:%M')} - {slot_end_time.strftime('%H:%M')}"
+        # Ensure start_time passed to template is timezone aware if USE_TZ=True
+        slot_start_datetime = timezone.make_aware(slot_start_time) if settings.USE_TZ and timezone.is_naive(slot_start_time) else slot_start_time
+
 
         for activity in ACTIVITY_TYPES:
             slot_info = {
                 "time_slot": time_slot_str,
-                "start_datetime": slot_start_time,
+                "start_datetime": slot_start_datetime, # Pass datetime object
                 "status": "Available",
                 "details": None,
                 "type": "available",
                 "competition_id": None,
                 "can_join_competition": False,
                 "is_full": False,
-                "booked_by_user": False,
+                "booked_by_user": False, # Participant check is now separate
                 "booking_id": None,
                 "user_id": None,
-                "name": "-", # Initialize name
-                 # Add flags needed for template logic
+                "name": "-",
                 "user_joined": False,
                 "is_creator": False,
+                "is_match": False,       # Flag for 1v1 match booking
+                "is_participant": False, # Flag if current user is in the match/booking
             }
 
+            # Check Competitions First
             competition_entry = competitions.filter(
                 activity_type=activity,
                 start_time__lt=slot_end_time,
@@ -149,6 +172,7 @@ def index(request):
             ).first()
 
             if competition_entry:
+                # ... (competition logic remains the same) ...
                 user_is_participant = False
                 user_is_creator = False
                 if request.user.is_authenticated:
@@ -156,17 +180,15 @@ def index(request):
                     user_is_creator = (request.user == competition_entry.creator)
 
                 slot_info.update({
-                    "status": "Competition",
+                    "status": "Competition", "type": "competition",
                     "details": f"Max: {competition_entry.max_joiners}, Joined: {competition_entry.participants.count()}",
-                    "type": "competition",
-                    "competition_id": competition_entry.id,
-                    "is_full": competition_entry.is_full(),
+                    "competition_id": competition_entry.id, "is_full": competition_entry.is_full(),
                     "can_join_competition": request.user.is_authenticated and not user_is_creator and not user_is_participant and not competition_entry.is_full(),
                     "name": f"Comp by {competition_entry.creator.username}",
-                    "user_joined": user_is_participant, # Pass this flag
-                    "is_creator": user_is_creator,   # Pass this flag
+                    "user_joined": user_is_participant, "is_creator": user_is_creator,
                 })
             else:
+                # Check Bookings if no competition
                 booked_entry = bookings.filter(
                     booking_type=activity,
                     start_time__lt=slot_end_time,
@@ -174,26 +196,35 @@ def index(request):
                 ).first()
 
                 if booked_entry:
+                    is_match = booked_entry.opponent is not None
+                    is_participant = False
+                    if request.user.is_authenticated:
+                        # Check if user is creator OR opponent
+                        is_participant = (str(request.user.id) == booked_entry.user_id) or \
+                                         (booked_entry.opponent and request.user.id == booked_entry.opponent.id)
+
                     slot_info.update({
-                        "status": "Booked",
-                        "type": "booked",
-                        "name": booked_entry.name,
+                        "status": "Booked", "type": "booked",
+                        "name": booked_entry.name, # Shows "Match: UserA vs UserB" or original name
                         "booking_id": booked_entry.id,
                         "user_id": booked_entry.user_id,
-                        "booked_by_user": request.user.is_authenticated and booked_entry.name == request.user.username
+                        "is_match": is_match, # Set flag
+                        "is_participant": is_participant, # Set flag
+                        # booked_by_user specifically checks if current user is the creator
+                        "booked_by_user": request.user.is_authenticated and (str(request.user.id) == booked_entry.user_id)
                     })
 
             timetable_by_activity[activity].append(slot_info)
 
     return render(request, 'bookings/index.html', {
         "timetable_by_activity": timetable_by_activity,
-        "selected_date": selected_date, # Pass date object
-        "previous_date": previous_date.strftime('%Y-%m-%d'), # Pass formatted string
-        "next_date": next_date.strftime('%Y-%m-%d'),       # Pass formatted string
-        "today_date": today_date.strftime('%Y-%m-%d'),     # Pass formatted string for Today button
+        "selected_date": selected_date,
+        "previous_date": previous_date.strftime('%Y-%m-%d'),
+        "next_date": next_date.strftime('%Y-%m-%d'),
+        "today_date": today_date.strftime('%Y-%m-%d'),
+        "now": now, # Pass current time to the template
         "user": request.user
     })
-
 
 @login_required
 def select_match_availability_activity_view(request):
@@ -213,45 +244,43 @@ def select_match_availability_activity_view(request):
 
 @login_required
 def match_availability_view(request, activity_type):
-    # Get selected date or default to today
-    today_dt = date.today() # Use consistent naming
+    # --- Date Calculation ---
+    today_dt = date.today()
     date_str = request.GET.get('date', today_dt.strftime('%Y-%m-%d'))
     try:
         selected_date_dt = date.fromisoformat(date_str)
     except ValueError:
-        selected_date_dt = today_dt # Default to today if format is invalid
+        selected_date_dt = today_dt # Default to today
+
+    previous_date_dt = selected_date_dt - timedelta(days=1)
+    next_date_dt = selected_date_dt + timedelta(days=1)
+    # --- End Date Calculation ---
 
     # --- Get Existing Availability Times ---
-    # Fetch records for the specific user, activity, and selected date
     existing_availabilities = MatchAvailability.objects.filter(
         user=request.user,
         booking_type=activity_type,
         start_time__date=selected_date_dt
-    ).order_by('start_time') # Ordering is good practice but not essential for the set
-
-    # Create a set of "HH:MM" strings for existing slots
-    existing_times_set = set()
-    for avail in existing_availabilities:
-        # Add the start time formatted as HH:MM
-        existing_times_set.add(avail.start_time.strftime("%H:%M"))
-        # Note: This assumes availability is always in 15-min blocks matching the grid.
-        # If availability could span multiple slots, more complex logic would be needed
-        # to add all covered 15-min intervals to the set.
-        # For now, we assume a 1-to-1 match between saved records and grid slots.
+    )
+    existing_times_set = {avail.start_time.strftime("%H:%M") for avail in existing_availabilities}
     # --- End Get Existing Times ---
 
+    # --- Define hours and minutes for template ---
+    hours_range = range(8, 24) # Numbers 8 through 23
+    minutes_list = ['00', '15', '30', '45'] # Keep minutes as strings
+    # --- End Define hours and minutes ---
 
-    # The form is no longer needed here as it was removed from the template
-    # form = MatchAvailabilityForm(initial={'booking_type': activity_type})
-
-    return render(request, 'bookings/match_availability.html', {
+    context = {
         'activity_type': activity_type,
-        # 'match_availabilities': existing_availabilities, # No longer needed for the table
-        'existing_availability_times': existing_times_set, # Pass the set of HH:MM strings
-        'today': today_dt, # Pass today's date object
-        'selected_date': selected_date_dt # Pass the selected date object
-    })
-
+        'existing_availability_times': existing_times_set,
+        'selected_date': selected_date_dt, 
+        'previous_date': previous_date_dt.strftime('%Y-%m-%d'),
+        'next_date': next_date_dt.strftime('%Y-%m-%d'),
+        'today_date': today_dt.strftime('%Y-%m-%d'),
+        'hours_range': hours_range,     # Pass the number range
+        'minutes_list': minutes_list, # Pass the minutes list
+    }
+    return render(request, 'bookings/match_availability.html', context)
 
 @login_required
 @csrf_exempt # Consider removing csrf_exempt if using proper CSRF handling in JS fetch headers
@@ -1622,39 +1651,39 @@ def toggle_slot_availability(request):
         is_selected = data.get('is_selected') # boolean: true if adding, false if removing
 
         # --- Basic Input Validation ---
-        if not all([time_slot_str, selected_date_str, activity_type, isinstance(is_selected, bool)]):
-            return JsonResponse({"message": "Missing required parameters (time_slot, selected_date, activity_type, is_selected)."}, status=400)
-
+        # ...(keep your existing validation)...
         try:
             selected_date = date.fromisoformat(selected_date_str)
             hours, minutes = map(int, time_slot_str.split(':'))
             slot_start_time = time(hour=hours, minute=minutes)
-            # Optional: Validate time is within allowed range (08:00 - 23:45)
             if not (8 <= hours <= 23):
                  raise ValueError("Time slot outside allowed range (08:00-23:45)")
-
         except (ValueError, TypeError) as e:
              return JsonResponse({"message": f"Invalid date or time format: {e}"}, status=400)
-
-        if activity_type not in [choice[0] for choice in MatchAvailability._meta.get_field('booking_type').choices]:
-             return JsonResponse({"message": "Invalid activity type."}, status=400)
+        # ...(keep checking activity_type)...
         # --- End Validation ---
 
-        # Calculate datetime objects
-        start_datetime = datetime.combine(selected_date, slot_start_time)
-        end_datetime = start_datetime + timedelta(minutes=15)
+        # Calculate naive datetime objects first
+        naive_start_datetime = datetime.combine(selected_date, slot_start_time)
+        naive_end_datetime = naive_start_datetime + timedelta(minutes=15)
+
+        # Make them timezone-aware using Django's current default timezone
+        # You might need to adjust if you have specific timezone requirements
+        start_datetime = timezone.make_aware(naive_start_datetime)
+        end_datetime = timezone.make_aware(naive_end_datetime)
+        # --- END DATETIME FIX ---
 
         if is_selected:
             # User wants to ADD or ensure this slot is available
             obj, created = MatchAvailability.objects.update_or_create(
                 user=request.user,
                 booking_type=activity_type,
-                start_time=start_datetime,
-                # Also match end_time in filter for update_or_create robustness? Depends on uniqueness.
-                # Assuming start_time/user/activity is unique enough for a 15-min slot.
+                start_time=start_datetime, # Use aware datetime
+                # Consider adding end_time to the filter if start_time isn't unique enough
+                # end_time=end_datetime,
                 defaults={
-                    'end_time': end_datetime,
-                    'is_available': True # Ensure it's marked available
+                    'end_time': end_datetime, # Use aware datetime
+                    'is_available': True
                 }
             )
             action = "created" if created else "updated (already existed)"
@@ -1665,7 +1694,7 @@ def toggle_slot_availability(request):
             deleted_count, _ = MatchAvailability.objects.filter(
                 user=request.user,
                 booking_type=activity_type,
-                start_time=start_datetime,
+                start_time=start_datetime, # Use aware datetime
                 # Optionally match end_time too for safety
                 # end_time=end_datetime
             ).delete()
