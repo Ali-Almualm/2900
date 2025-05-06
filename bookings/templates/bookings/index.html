@@ -405,25 +405,57 @@
 
         // --- Competition Join/Leave Functions (Still use alert/confirm) ---
         function leaveCompetition(competitionId) {
-             if (!confirm("Are you sure you want to leave this competition?")) return;
-             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-             if (!csrfToken) { alert('CSRF token not found.'); return; }
-             // Consider changing alert(...) to showMessageModal(...) later if desired
-             fetch(`/leave-competition/${competitionId}/`, { method: "POST", headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" }, })
-             .then(response => response.json())
-             .then(data => { alert(data.message); if(data.success) { location.reload(); } })
-             .catch(error => { console.error("Error leaving competition:", error); alert("An error occurred while trying to leave the competition."); });
-        }
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+            if (!csrfToken) {
+                showMessageModal('CSRF token not found. Cannot leave competition.', false);
+                return;
+            }
 
+            showConfirmModal("Are you sure you want to leave this competition?", () => {
+                // This code runs if user clicks "Confirm" in the custom modal
+                console.log(`Proceeding to leave competition ${competitionId}`);
+                fetch(`/leave-competition/${competitionId}/`, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+                })
+                .then(response => response.json()) // Assuming your backend always returns JSON
+                .then(data => {
+                    // Use showMessageModal for feedback
+                    showMessageModal(data.message, data.success, () => {
+                        if (data.success) { location.reload(); }
+                    });
+                })
+                .catch(error => {
+                    console.error("Error leaving competition:", error);
+                    showMessageModal("An error occurred while trying to leave the competition.", false);
+                });
+            });
+        }
         function joinCompetition(competitionId) {
-            if (!confirm("Are you sure you want to join this competition?")) return;
-             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-             if (!csrfToken) { alert('CSRF token not found.'); return; }
-             // Consider changing alert(...) to showMessageModal(...) later if desired
-            fetch(`/join-competition/${competitionId}/`, { method: "POST", headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" }, })
-            .then(response => response.json())
-            .then(data => { alert(data.message); if(data.success) { location.reload(); } })
-            .catch(error => { console.error("Error joining competition:", error); alert("An error occurred while trying to join the competition."); });
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+            if (!csrfToken) {
+                showMessageModal('CSRF token not found. Cannot join competition.', false);
+                return;
+            }
+
+            showConfirmModal("Are you sure you want to join this competition?", () => {
+                // This code runs if user clicks "Confirm"
+                console.log(`Proceeding to join competition ${competitionId}`);
+                fetch(`/join-competition/${competitionId}/`, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showMessageModal(data.message, data.success, () => {
+                        if (data.success) { location.reload(); }
+                    });
+                })
+                .catch(error => {
+                    console.error("Error joining competition:", error);
+                    showMessageModal("An error occurred while trying to join the competition.", false);
+                });
+            });
         }
         // --- End Competition Functions ---
 

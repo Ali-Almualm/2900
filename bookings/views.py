@@ -393,6 +393,7 @@ def delete_match_availability(request, match_availability_id):
             return JsonResponse({'success': False, 'message': str(e)})
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
 
+
 @login_required
 def find_matches(request, activity_type):
     """
@@ -687,8 +688,15 @@ def register_user_view(request):
     if request.method == "POST":
         form = registrationform(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('index')
+            user = form.save()  # Save the form and get the new user object
+            if user is not None:
+                # Automatically log the user in
+                login(request, user)
+                messages.success(request, f"Registration successful! Welcome, {user.username}.") # Optional: Add a success message
+                return redirect('index') # Redirect to the index page or dashboard
+            else:
+                # Handle the unlikely case where user is None after save
+                messages.error(request, "Could not create your account. Please try again.")
     else:
         form = registrationform()
     return render(request, 'bookings/register.html', {
@@ -705,12 +713,14 @@ def login_user_view(request):
             if user is not None:
                 login(request, user)
                 return redirect('index')
+            else:
+                # Optional: Add a message for failed login
+                messages.error(request, "Invalid username or password.")
     else:
         form = loginform()
     return render(request, 'bookings/login.html', {
         'form': form
     })
-
 @login_required
 def logout_view(request):
     logout(request)
@@ -1178,7 +1188,6 @@ def complete_competition(request, competition_id):
     return redirect('index') # Fallback redirect for now
 
 
-@login_required
 def competition_detail(request, competition_id):
     """Displays details for a specific competition."""
     competition = get_object_or_404(Competition, id=competition_id)
