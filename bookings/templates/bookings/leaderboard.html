@@ -3,108 +3,195 @@
 {% block title %}Leaderboard{% endblock %}
 
 {% block content %}
-<h1>Leaderboard</h1>
+<div id="leaderboard-content" class="content-fade-in">
+    <h1 class="page-title">Leaderboard</h1>
 
-<!-- Sorting Options -->
-<div>
-    <p>Sort by:</p>
-    <a href="?sort_by=ranking_pool" {% if sort_by == 'ranking_pool' %}class="active-sort"{% endif %}>Pool Rating</a> |
-    <a href="?sort_by=ranking_switch" {% if sort_by == 'ranking_switch' %}class="active-sort"{% endif %}>Switch Rating</a> |
-    <a href="?sort_by=ranking_table_tennis" {% if sort_by == 'ranking_table_tennis' %}class="active-sort"{% endif %}>Table Tennis Rating</a>
-</div>
+    <div class="leaderboard-controls">
+        <p class="section-label">Sort by:</p>
+        <div class="button-group"> {# Using a div for the button group #}
+            <a href="?sort_by=ranking_pool" class="button {% if sort_by == 'ranking_pool' %}active-sort{% endif %}">Pool Rating</a>
+            <a href="?sort_by=ranking_switch" class="button {% if sort_by == 'ranking_switch' %}active-sort{% endif %}">Switch Rating</a>
+            <a href="?sort_by=ranking_table_tennis" class="button {% if sort_by == 'ranking_table_tennis' %}active-sort{% endif %}">Table Tennis Rating</a>
+        </div>
+    </div>
 
-<!-- Display Current Sorting -->
-<div>
-    <p>Currently sorted by: 
-        {% if sort_by == 'ranking_pool' %}
-            Pool Rating
-        {% elif sort_by == 'ranking_switch' %}
-            Switch Rating
-        {% elif sort_by == 'ranking_table_tennis' %}
-            Table Tennis Rating
-        {% else %}
-            Unknown
-        {% endif %}
-    </p>
-</div>
-
-<table class="leaderboard-table">
-    <thead>
-        <tr>
-            <th>Rank</th>
-            <th>Username</th>
+    <div class="leaderboard-info">
+        <p class="current-sort-info">Currently sorted by:
             {% if sort_by == 'ranking_pool' %}
-                <th>Pool Rating</th>
+                Pool Rating
             {% elif sort_by == 'ranking_switch' %}
-                <th>Switch Rating</th>
+                Switch Rating
             {% elif sort_by == 'ranking_table_tennis' %}
-                <th>Table Tennis Rating</th>
+                Table Tennis Rating
+            {% else %}
+                Unknown
             {% endif %}
-        </tr>
-    </thead>
-    <tbody>
-        {% for user in leaderboard %}
-        <tr>
-            <td>{{ forloop.counter }}</td>
-            <td>{{ user.username }}</td>
-            {% if sort_by == 'ranking_pool' %}
-                <td>{{ user.userprofile.ranking_pool }}</td>
-            {% elif sort_by == 'ranking_switch' %}
-                <td>{{ user.userprofile.ranking_switch }}</td>
-            {% elif sort_by == 'ranking_table_tennis' %}
-                <td>{{ user.userprofile.ranking_table_tennis }}</td>
-            {% endif %}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+        </p>
+    </div>
+
+    <div class="table-container">
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th class="rank-header">Rank</th>
+                    <th class="username-header">Username</th>
+                    {% if sort_by == 'ranking_pool' %}
+                        <th class="rating-header">Pool Rating</th>
+                    {% elif sort_by == 'ranking_switch' %}
+                        <th class="rating-header">Switch Rating</th>
+                    {% elif sort_by == 'ranking_table_tennis' %}
+                        <th class="rating-header">Table Tennis Rating</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in leaderboard %}
+                <tr>
+                    <td class="rank-cell">{{ forloop.counter }}</td>
+                    <td class="username-cell">{{ user.username }}</td>
+                    {% if sort_by == 'ranking_pool' %}
+                        <td class="rating-cell">{{ user.userprofile.ranking_pool }}</td>
+                    {% elif sort_by == 'ranking_switch' %}
+                        <td class="rating-cell">{{ user.userprofile.ranking_switch }}</td>
+                    {% elif sort_by == 'ranking_table_tennis' %}
+                        <td class="rating-cell">{{ user.userprofile.ranking_table_tennis }}</td>
+                    {% endif %}
+                </tr>
+                {% empty %}
+                <tr><td colspan="3" class="empty-message">No players ranked yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 
 <style>
-/* Leaderboard Table */
-.leaderboard-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 20px 0;
-    font-size: 16px;
-    text-align: left;
-}
-
-.leaderboard-table th, .leaderboard-table td {
-    border: 1px solid #ddd;
-    padding: 8px;
-}
-
-.leaderboard-table th {
-    background-color: #f4f4f4;
-    font-weight: bold;
-}
-
-/* Set fixed column widths */
-.leaderboard-table th:nth-child(1), .leaderboard-table td:nth-child(1) {
-    width: 10%; /* Rank column */
-}
-
-.leaderboard-table th:nth-child(2), .leaderboard-table td:nth-child(2) {
-    width: 30%; /* Username column */
-}
-
-.leaderboard-table th:nth-child(3), .leaderboard-table td:nth-child(3) {
-    width: 20%; /* Rating column */
-}
-
-/* Alternate row colors */
-.leaderboard-table tr:nth-child(even) {
-    background-color: #f9f9f9;
-}
-
-.leaderboard-table tr:hover {
-    background-color: #f1f1f1;
-}
-
-/* Active Sort Link */
-.active-sort {
-    font-weight: bold;
-    text-decoration: underline;
-}
-</style>
-{% endblock %}
+    /* Leaderboard Specific Styles - Consider moving to styles.css */
+    
+    .leaderboard-controls {
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+    }
+    
+    .section-label {
+        margin-right: 10px;
+        font-weight: bold;
+        color: #555;
+    }
+    
+    .button {
+        display: inline-block;
+        padding: 8px 12px;
+        font-size: 0.9em;
+        font-weight: normal; /* Changed to normal to match light button style */
+        text-align: center;
+        text-decoration: none;
+        border: 1px solid #ccc; /* Light gray border */
+        border-radius: 4px; /* Standard rounded corners */
+        background-color: #f8f8f8; /* Light background */
+        color: #333; /* Dark text */
+        cursor: pointer;
+        transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+        margin-right: 5px;
+    }
+    
+    .button:hover {
+        background-color: #e0e0e0; /* Slightly darker on hover */
+        border-color: #bbb;
+        color: #222;
+    }
+    
+    .button.active-sort {
+        font-weight: bold; /* Keep active state bold */
+        background-color: #28a745; /* Green background for active */
+        border-color: #28a745; /* Green border for active */
+        color: white; /* White text for active green button */
+        text-decoration: none; /* Remove underline if present */
+    }
+    
+    .button.active-sort:hover {
+        background-color: #1e7e34; /* Darker shade of green on hover for active */
+        border-color: #1e7e34;
+    }
+    
+    /* Style for the table container to add borders */
+    .table-container {
+        border: 1px solid #ccc; /* Add a border */
+        border-radius: 5px; /* Optional: Add rounded corners */
+        margin-top: 15px; /* Add some space above the table */
+        overflow: hidden; /* To contain rounded corners of the table */
+        background-color: white; /* Optional: Add a background color */
+    }
+    
+    /* Style the table itself */
+    .leaderboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0;
+        font-size: 16px;
+        text-align: center;
+    }
+    
+    .leaderboard-table th, .leaderboard-table td {
+        border: none;
+        padding: 8px;
+    }
+    
+    .leaderboard-table th {
+        background-color: #f4f4f4;
+        font-weight: bold;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .leaderboard-table tr:nth-child(even) {
+        background-color: #f9f9f9;
+    }
+    
+    .leaderboard-table tr:hover {
+        background-color: #f1f1f1;
+    }
+    
+    .rank-header, .rank-cell {
+        width: 10%;
+    }
+    
+    .username-header, .username-cell {
+        width: 40%;
+        text-align: left;
+    }
+    
+    .rating-header, .rating-cell {
+        width: 30%;
+    }
+    
+    .empty-message {
+        padding: 10px;
+        text-align: center;
+        font-style: italic;
+        color: #777;
+    }
+    
+    /* Initial state for fade-in */
+    .content-fade-in {
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out;
+    }
+    
+    /* Class to trigger the fade-in */
+    .content-fade-in.loaded {
+        opacity: 1;
+    }
+    </style>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const leaderboardContent = document.getElementById('leaderboard-content');
+            if (leaderboardContent) {
+                setTimeout(() => {
+                    leaderboardContent.classList.add('loaded');
+                }, 50);
+            }
+        });
+    </script>
+    {% endblock %}
