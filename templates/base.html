@@ -55,21 +55,21 @@
     {% if messages %}
     {# --- Simple Message Modal --- #}
     <div id="message-overlay" class="overlay message-overlay-container" style="display: none;">
-        <div class="overlay-content message-content">
+        <div class="overlay-content message-content"> {# Default class, JS will add success/error/warning #}
             <h3 id="message-title">Notification</h3>
             <p id="message-text" style="margin-top: 15px; margin-bottom: 20px;">Sample message text.</p>
             <button id="message-ok-button" class="button">OK</button>
         </div>
     </div>
 
-    <div id="confirm-overlay" class="overlay confirm-overlay-container" style="display: none;"> {# Added specific class #}
-        <div class="overlay-content confirm-content"> {# Added specific class #}
+    {# --- Confirmation Modal (for Yes/Cancel prompts) --- #}
+    <div id="confirm-overlay" class="overlay confirm-overlay-container" style="display: none;">
+        <div class="overlay-content confirm-content">
             <h3 id="confirm-title">Confirm Action</h3>
             <p id="confirm-text" style="margin-top: 15px; margin-bottom: 20px;">Are you sure?</p>
             <div class="confirm-buttons">
-                 {# Note: Button IDs and potentially classes for styling #}
                 <button id="confirm-cancel-button" class="button button-secondary">Cancel</button>
-                <button id="confirm-yes-button" class="button button-danger">Confirm</button> {# Example: Danger style for confirm #}
+                <button id="confirm-yes-button" class="button">Confirm</button> {# Removed button-danger for default #}
             </div>
         </div>
     </div>

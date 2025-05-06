@@ -720,8 +720,6 @@ def logout_view(request):
 
 @login_required
 @csrf_exempt
-@login_required
-@csrf_exempt
 def create_match_request(request):
     """Create a match request from one user to another."""
     if request.method == 'POST':
@@ -871,7 +869,7 @@ def create_competition(request):
             messages.success(request, f"Competition for {competition.get_activity_type_display()} created successfully!")
             # Redirect to the activity page for the date of the competition
             activity_url = reverse(competition.activity_type) # e.g., reverse('pool')
-            return redirect(f"{activity_url}?date={competition.start_time.strftime('%Y-%m-%d')}")
+            return redirect("index")
         else:
              # Pass the form with errors back to the template
             pass # Fall through to render the form again

@@ -124,7 +124,8 @@
                                     {% if user.is_authenticated %}
                                         {% if slot.is_creator %} <span class="creator-tag">Creator</span>
                                         {% elif slot.user_joined %} <button onclick="leaveCompetition('{{ slot.competition_id }}')" class="button button-small button-danger">Leave</button>
-                                        {% elif slot.can_join_competition %} <button onclick="joinCompetition('{{ slot.competition_id }}')" class="button button-small button-success">Join</button>
+                                        {% elif slot.can_join_competition %}             
+                                        <button onclick="joinCompetition('{{ slot.competition_id }}')" class="button button-small button-success">Join</button>
                                         {% elif slot.is_full %} <span class="status-tag status-full">Full</span>
                                         {% else %} <span class="status-tag status-closed">Closed</span>
                                         {% endif %}
