@@ -31,6 +31,7 @@
             {# <a href="{% url 'pool' %}">Pool</a> | #}
             {# <a href="{% url 'switch' %}">Nintendo Switch</a> | #}
             {# <a href="{% url 'table_tennis' %}">Table Tennis</a> | #}
+            <a href="{% url 'leaderboard' %}">Leaderboard</a> |
 
             {# Added active check to other links (use appropriate url_names) #}
             <a href="{% url 'find_matches' activity_type='pool' %}" class="{% if request.resolver_match.url_name == 'find_matches' %}active-nav{% endif %}">Find Matches</a> |
