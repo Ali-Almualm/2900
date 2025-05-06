@@ -41,7 +41,7 @@
                 <ul>
                     {% for overlap in match.overlapping_times %}
                         <li>
-                            {{ overlap.start|date:"M d, Y" }} from 
+                            {{ overlap.start|date:"d, M, Y" }} from 
                             {{ overlap.start|time:"H:i" }} to {{ overlap.end|time:"H:i" }}
                             ({{ overlap.duration_minutes }} minutes)
                             
@@ -63,14 +63,13 @@
 
 {% if pending_requests %}
     <h2>Pending Match Requests</h2>
-    <div class="pending-requests">
+    <div class="matches-grid"> {# <--- CHANGE THIS LINE #}
         {% for request in pending_requests %}
             <div class="request-card">
                 <p><strong>Requester:</strong> {{ request.requester.username }}</p>
-                <p><strong>Activity:</strong> {{ request.activity_type|title }}</p>
                 <p><strong>Requester's Skill Rating:</strong> {{ request.requester_skill }}</p>
-                <p><strong>Time:</strong> {{ request.start_time|date:"M d, Y" }} from {{ request.start_time|time:"H:i" }} to {{ request.end_time|time:"H:i" }}</p>
-                
+                <p><strong>Time:</strong> {{ request.start_time|date:"d, M, Y" }} from {{ request.start_time|time:"H:i" }} to {{ request.end_time|time:"H:i" }}</p>
+
                 <div>
                     <button class="accept-button" onclick="respondToMatch('{{ request.id }}', 'confirm', '{{ csrf_token }}')">Accept</button>
                     <button class="reject-button" onclick="respondToMatch('{{ request.id }}', 'reject', '{{ csrf_token }}')">Reject</button>
@@ -79,7 +78,6 @@
         {% endfor %}
     </div>
 {% endif %}
-
 <script>
 // Function to send a match request
 function sendMatchRequest(date, startTime, endTime, activityType, partnerId, csrfToken) {

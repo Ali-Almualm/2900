@@ -690,10 +690,6 @@ nav a {
     z-index: 1000; /* Ensure it's on top */
 }
 
-/* Specific container for message overlay if needed */
-.message-overlay-container {
-     /* Add specific styles if needed, often inherits from .overlay */
-}
 
 /* Content box for the message */
 .message-content {
@@ -947,14 +943,21 @@ ul.messages {
      color: white;
 }
 .button-secondary:hover { background-color: #5a6268; }
-.booking-confirmation-content {
-    /* Inherits from .overlay-content */
-    text-align: left; /* Align text left for details */
-    width: auto;
-    min-width: 350px; /* Adjust width */
-    max-width: 500px;
-}
 
+.booking-confirmation-content {
+    /* Inherits from .overlay-content if you have a general class */
+    /* Or set base styles here if .overlay-content is too generic */
+    background: white;
+    padding: 25px 30px; /* Specific padding for this modal */
+    border-radius: 8px;
+    width: auto;
+    min-width: 350px;
+    max-width: 500px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    text-align: left; /* Overrides .overlay-content if that's centered */
+    border-top: 5px solid #ffc107; /* << ADD THIS LINE FOR A BLUE TOP BORDER */
+    /* If you wanted yellow: border-top: 5px solid #ffc107; */
+}
 .booking-confirmation-content h2 {
     text-align: center; /* Center title */
     margin-bottom: 20px;

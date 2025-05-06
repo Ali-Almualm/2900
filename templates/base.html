@@ -41,6 +41,9 @@
 
                 <a href="{% url 'select_match_availability_activity' %}" class="{% if request.resolver_match.url_name == 'select_match_availability_activity' or request.resolver_match.url_name == 'match_availability' %}active-nav{% endif %}">Set Availability</a> |
                 <a href="{% url 'create_competition' %}" class="{% if request.resolver_match.url_name == 'create_competition' %}active-nav{% endif %}">Create Competition</a> |
+                <!-- <a href="{% url 'profile' %}" >Profile</a> -->
+                <a href="{% url 'profile' %}" class="{% if request.resolver_match.url_name == 'profile' %}active-nav{% endif %}">Profile</a> |
+
                 <a href="{% url 'logout' %}" >Logout</a>
                 {# Username span already moved #}
             {% else %}
