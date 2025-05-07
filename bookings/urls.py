@@ -16,14 +16,6 @@ urlpatterns = [
     path('match-availability/select/', views.select_match_availability_activity_view, name='select_match_availability_activity'),
     # Renamed path, view function, and URL name
     path('match-availability/<str:activity_type>/', views.match_availability_view, name='match_availability'),
-    # Renamed path, view function, and URL name
-    path('update-match-availability/', views.update_match_availability, name='update_match_availability'),
-    # Renamed path, view function, and URL name
-    path('save-match-availability/<str:activity_type>/', views.save_match_availability, name='save_match_availability'),
-    # Renamed path, parameter, view function, and URL name
-    path('toggle-match-availability/<int:match_availability_id>/', views.toggle_match_availability, name='toggle_match_availability'),
-    # Renamed path, parameter, view function, and URL name
-    path('delete-match-availability/<int:match_availability_id>/', views.delete_match_availability, name='delete_match_availability'),
     # --- End Renamed URLs ---
     path('api/toggle-slot-availability/', views.toggle_slot_availability, name='toggle_slot_availability'), # New URL
 
