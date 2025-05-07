@@ -3,6 +3,8 @@ from django import forms
 from .models import Booking, MatchAvailability, Competition, CompetitionMatch, MatchParticipant
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.utils import timezone # Import timezone
+import datetime # Import datetime
 
 class BookingForm(forms.ModelForm):
     class Meta:
@@ -37,10 +39,43 @@ class CompetitionForm(forms.ModelForm):
         model = Competition
         fields = ['activity_type', 'start_time', 'end_time', 'max_joiners']
         widgets = {
-            'start_time': forms.DateTimeInput(attrs={'type': 'datetime-local'}, format='%Y-%m-%dT%H:%M'),
-            'end_time': forms.DateTimeInput(attrs={'type': 'datetime-local'}, format='%Y-%m-%dT%H:%M'),
-            'activity_type': forms.Select(choices=Booking.BOOKING_TYPES), # Use choices from Booking model
+            'start_time': forms.DateTimeInput(
+                attrs={
+                    'type': 'datetime-local',
+                    'step': 900  # 15 minutes * 60 seconds
+                },
+                format='%Y-%m-%dT%H:%M'
+            ),
+            'end_time': forms.DateTimeInput(
+                attrs={
+                    'type': 'datetime-local',
+                    'step': 900  # 15 minutes * 60 seconds
+                },
+                format='%Y-%m-%dT%H:%M'
+            ),
+            'activity_type': forms.Select(), # Choices are set by the model field
         }
+        help_texts = {
+            'start_time': 'Select a time on a 15-minute interval (e.g., 10:00, 10:15, 10:30).',
+            'end_time': 'Select a time on a 15-minute interval.',
+        }
+
+    def clean_start_time(self):
+        start_time = self.cleaned_data.get("start_time")
+        if start_time:
+            if start_time.minute % 15 != 0:
+                raise forms.ValidationError("Start time must be in 15-minute intervals (e.g., HH:00, HH:15, HH:30, HH:45).")
+            # Optional: Prevent past times if not already handled by browser/widget
+            if start_time < timezone.now():
+                 raise forms.ValidationError("Start time cannot be in the past.")
+        return start_time
+
+    def clean_end_time(self):
+        end_time = self.cleaned_data.get("end_time")
+        if end_time:
+            if end_time.minute % 15 != 0:
+                raise forms.ValidationError("End time must be in 15-minute intervals (e.g., HH:00, HH:15, HH:30, HH:45).")
+        return end_time
 
     def clean(self):
         cleaned_data = super().clean()
@@ -51,6 +86,14 @@ class CompetitionForm(forms.ModelForm):
         if start_time and end_time:
             if end_time <= start_time:
                 raise forms.ValidationError("End time must be after start time.")
+            
+            # Competition duration validation (e.g., min 30 mins, max 4 hours)
+            duration = end_time - start_time
+            if duration < datetime.timedelta(minutes=30):
+                raise forms.ValidationError("Competition duration must be at least 30 minutes.")
+            if duration > datetime.timedelta(hours=4): # Example max duration
+                raise forms.ValidationError("Competition duration cannot exceed 4 hours.")
+
 
             # Check for conflicts with existing bookings
             conflicting_bookings = Booking.objects.filter(
@@ -59,6 +102,10 @@ class CompetitionForm(forms.ModelForm):
                 end_time__gt=start_time
             )
             if conflicting_bookings.exists():
+                # Check if we are updating an existing competition
+                instance_id = self.instance.pk if self.instance else None
+                # Exclude self if updating (this logic is more for a Competition model's clean method)
+                # For a create form, any conflict is usually an error.
                 raise forms.ValidationError(
                     f"This time slot conflicts with an existing booking for {activity_type}."
                 )
@@ -69,11 +116,14 @@ class CompetitionForm(forms.ModelForm):
                 start_time__lt=end_time,
                 end_time__gt=start_time
             )
+            # Exclude self if updating an existing competition
+            if self.instance and self.instance.pk:
+                conflicting_competitions = conflicting_competitions.exclude(pk=self.instance.pk)
+
             if conflicting_competitions.exists():
                  raise forms.ValidationError(
                     f"This time slot conflicts with an existing competition for {activity_type}."
                 )
-
         return cleaned_data
     
 

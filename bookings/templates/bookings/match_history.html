@@ -37,8 +37,8 @@
                 <th>Your Status</th>
                 <th>Opponent Status</th>
                 <th>Action</th>
-                {# Keep debug info if helpful #}
-                <th>Debug Info</th>
+                <!-- {# Keep debug info if helpful #} -->
+                <!-- <th>Debug Info</th> -->
             </tr>
         </thead>
         <tbody>
@@ -131,13 +131,13 @@
                     {% endif %}
                 </td>
                  {# Keep debug info if helpful #}
-                 <td>
+                 <!-- <td>
                     <p>Match ID: {{ match.id }}</p>
                     <p>Match Creator ID: {{ match.user_id }}</p>
                     <p>Opponent ID: {% if match.opponent %}{{ match.opponent.id }}{% else %}No opponent{% endif %}</p>
                     <p>User Result DB: {{ match.user_result|default:"(None)" }}</p>
                     <p>Opponent Result DB: {{ match.opponent_result|default:"(None)" }}</p>
-                </td>
+                </td> -->
             </tr>
             {% endfor %}
         </tbody>

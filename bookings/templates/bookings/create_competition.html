@@ -3,39 +3,80 @@
 {% block title %}Create Competition{% endblock %}
 
 {% block content %}
-    <h2>Create a New Competition</h2>
+    {# Use a container similar to other forms for consistent styling #}
+    <div class="form-container" style="max-width: 600px; margin: 20px auto; padding: 20px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 5px;">
 
-    {% if form.errors %}
-        <div class="error-message">
-            <p>Please correct the errors below:</p>
-            {{ form.non_field_errors }}
-            <ul>
-                {% for field in form %}
-                    {% if field.errors %}
-                        <li><strong>{{ field.label }}:</strong> {{ field.errors|striptags }}</li>
-                    {% endif %}
+        <h2>Create a New Competition</h2>
+
+        {% if messages %}
+            <ul class="messages">
+                {% for message in messages %}
+                <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
                 {% endfor %}
             </ul>
-        </div>
-    {% endif %}
+        {% endif %}
 
-     {% if messages %}
-        <ul class="messages">
-            {% for message in messages %}
-            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+        {% if form.non_field_errors %}
+            <div class="error-message">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {# Loop through fields for more control, or keep as_p if simple styling is enough #}
+            {% for field in form %}
+                <div class="form-field-wrapper" style="margin-bottom: 15px;">
+                    {{ field.label_tag }}
+                    {% if field.help_text %}
+                        <small class="helptext" style="display: block; font-size: 0.9em; color: #666; margin-top: 2px; margin-bottom: 5px;">{{ field.help_text }}</small>
+                    {% endif %}
+                    {{ field }}
+                    {% if field.errors %}
+                        <ul class="errorlist" style="color: red; list-style: none; padding: 0; margin: 5px 0 0 0; font-size: 0.9em;">
+                            {% for error in field.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
             {% endfor %}
-        </ul>
-    {% endif %}
 
+            <div class="form-actions" style="margin-top: 20px; text-align: right;">
+                <button type="submit" class="button">Create Competition</button>
+                 <a href="{% url 'index' %}" class="button button-secondary" style="margin-left: 10px;">Cancel</a>
+            </div>
+        </form>
+    </div>
 
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Create Competition</button>
-    </form>
-
+    {# Add the specific CSS for form-container and elements if not already globally available via styles.css #}
+    {# The styles below are similar to add_competition_match.html for consistency #}
     <style>
-        .error-message {
+        .form-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-container input[type="text"],
+        .form-container input[type="number"],
+        .form-container input[type="datetime-local"],
+        .form-container select {
+            width: 100%;
+            padding: 10px; /* Increased padding for better touch/click targets */
+            margin-bottom: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 1em; /* Ensure readable font size */
+        }
+        .form-container button.button,
+        .form-container a.button { /* Style for the submit button and cancel link */
+            padding: 10px 20px;
+            font-size: 1em;
+            /* Other button styles are likely inherited from base.html or styles.css */
+        }
+        .error-message { /* For form.non_field_errors */
             color: red;
             background-color: #ffeeee;
             border: 1px solid #ffcccc;
@@ -43,25 +84,28 @@
             margin-bottom: 15px;
             border-radius: 4px;
         }
-        .messages .success {
+        ul.messages .success {
              color: green;
              background-color: #e6ffe6;
              border: 1px solid #ccffcc;
-             padding: 10px;
-             margin-bottom: 15px;
-             border-radius: 4px;
+             /* padding, margin, border-radius already handled by general .messages li */
         }
-        .messages .error { /* Style for error messages from messages framework */
+        ul.messages .error { /* For messages framework errors */
             color: red;
             background-color: #ffeeee;
             border: 1px solid #ffcccc;
-            padding: 10px;
-            margin-bottom: 15px;
-            border-radius: 4px;
         }
          ul.messages {
             list-style: none;
             padding: 0;
+            margin-bottom: 15px;
+         }
+         .button-secondary { /* Ensure this is defined if not global */
+            background-color: #6c757d;
+            color: white;
+         }
+         .button-secondary:hover {
+            background-color: #5a6268;
          }
     </style>
 {% endblock %}
