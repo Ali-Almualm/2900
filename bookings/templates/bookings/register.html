@@ -22,3 +22,107 @@
     </div>
 </body>
 </html>
+
+<style >
+
+body {
+    font-family: 'YourSiteFont', sans-serif; /* Replace 'YourSiteFont' */
+    color: #333 
+    margin: 0;
+    padding: 20px; /* Or as needed */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh; /* Make sure it takes full viewport height */
+}
+
+/* --- Container Styling (Common for login and register) --- */
+.login-container,
+.register-container {
+    padding: 30px;
+    border-radius: 8px; /* Or your site's standard border-radius */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* Optional: a subtle shadow */
+    width: 100%;
+    max-width: 400px; /* Adjust as needed */
+    text-align: center;
+}
+
+/* --- Heading Styling --- */
+.login-container h2,
+.register-container h2 {
+    margin-bottom: 25px;
+    font-size: 2em; /* Or your site's h2 size */
+}
+
+/* --- Form Styling (Django's form.as_p generates <p> tags) --- */
+.login-form p,
+.register-form p {
+    margin-bottom: 15px;
+    text-align: left; /* Align labels and inputs to the left */
+}
+
+.login-form label,
+.register-form label {
+    display: block; /* Make labels take full width */
+    margin-bottom: 5px;
+    font-weight: bold; /* Or your site's label weight */
+}
+
+.login-form input[type="text"],
+.login-form input[type="password"],
+.login-form input[type="email"],
+.register-form input[type="text"],
+.register-form input[type="password"],
+.register-form input[type="email"],
+.register-form input[type="number"] { /* Add other input types as needed */
+    width: calc(100% - 20px); /* Adjust width considering padding */
+    padding: 10px;
+    border-radius: 4px; /* Or your site's standard input border-radius */
+    box-sizing: border-box;
+    font-family: 'YourSiteFont', sans-serif;
+    font-size: 1em; /* Or your site's input font size */
+}
+
+.login-form input[type="text"]:focus,
+.login-form input[type="password"]:focus,
+.login-form input[type="email"]:focus,
+.register-form input[type="text"]:focus,
+.register-form input[type="password"]:focus,
+.register-form input[type="email"]:focus,
+.register-form input[type="number"]:focus {
+    outline: none;
+}
+
+
+/* --- Button Styling --- */
+.login-button,
+.register-button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px; /* Or your site's standard button border-radius */
+    cursor: pointer;
+    font-size: 1em; /* Or your site's button font size */
+    font-weight: bold;
+    text-transform: uppercase; /* Optional: if your site uses this */
+    width: 100%; /* Make button full width of container */
+    margin-top: 10px; /* Space above the button */
+}
+
+/* --- Links Styling --- */
+.login-links,
+.register-links {
+    margin-top: 20px;
+    font-size: 0.9em; /* Or your site's link font size */
+}
+
+.login-links a,
+.register-links a {
+    text-decoration: none;
+}
+
+.login-links a:hover,
+.register-links a:hover {
+    text-decoration: underline;
+}
+
+</style>
