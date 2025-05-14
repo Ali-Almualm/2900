@@ -131,7 +131,6 @@
     function changeDate() {
       let selectedDate = document.getElementById("selected-date").value;
       console.log("📆 Selected Date from Calendar:", selectedDate);
-       // Construct URL correctly for activity view
       window.location.href = `{% url activity activity_type=activity %}?date=${selectedDate}`;
     }
 
@@ -245,8 +244,6 @@
                 cell.classList.remove('selected-slot');
             });
             selectedSlots = [];
-            // Optionally hide the 'Book Selected Range' button
-            // document.getElementById('book-selected-range').style.display = 'none';
         }
 
         document.querySelectorAll('.table-container .selectable').forEach(cell => {
@@ -298,7 +295,7 @@
             }
         });
 
-        // Helper to add 15 minutes (ensure robust time math if needed)
+        // Helper to add 15 minutes
         function add15Minutes(timeStr) {
             // Basic check for valid format
             if (!timeStr || !timeStr.includes(':')) return null;
@@ -369,7 +366,6 @@
                     "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value,
                     "Content-Type": "application/json"
                 },
-                // No body needed
             })
             .then(response => response.json())
             .then(data => {

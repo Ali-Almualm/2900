@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from django.conf import settings # Recommended for ForeignKey to User
+from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -13,8 +13,6 @@ class MatchAvailability(models.Model): # Renamed
     ])
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    # Consider renaming is_available if it causes confusion.
-    # Maybe 'is_seeking_match'? But 'is_available' within MatchAvailability context might be okay.
     is_available = models.BooleanField(default=True)
 
     def __str__(self):
@@ -22,7 +20,6 @@ class MatchAvailability(models.Model): # Renamed
         return f"{self.user.username} - Match Availability: {self.booking_type} - {self.start_time} to {self.end_time}"
 
     class Meta:
-        # Updated unique_together if you want to keep the model name change consistent
         unique_together = ('user', 'booking_type', 'start_time', 'end_time')
         verbose_name = "Match Availability" # Optional: For Admin
         verbose_name_plural = "Match Availabilities" # Optional: For Admin
@@ -38,7 +35,7 @@ class BookingRequestmatch(models.Model):
     end_time = models.DateTimeField()
     is_confirmed = models.BooleanField(default=False)
     is_rejected = models.BooleanField(default=False)
-    is_completed = models.BooleanField(default=False)  # New field to track match completion
+    is_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     requester_skill = models.IntegerField(null=True, blank=True)
 
@@ -85,7 +82,7 @@ class Booking(models.Model):
 
     class Meta:
         db_table = "bookings"  # Ensures Django uses the correct table name
-        unique_together = ('start_time', 'booking_type')  # ✅ Allows different activities at the same time
+        unique_together = ('start_time', 'booking_type')  # Allows different activities at the same time
 
     def __str__(self):
         return f"{self.name} - {self.booking_type} ({self.start_time} to {self.end_time})"
@@ -129,11 +126,6 @@ class Competition(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='scheduled') # New status field
 
-    # We need to ensure a competition doesn't overlap with a regular booking or another competition
-    # for the same activity type and time.
-    # A unique constraint helps, but validation in the view/form is crucial.
-    # unique_together might be too restrictive if you allow *different* activities at the same time.
-
     def __str__(self):
         return f"Competition: {self.get_activity_type_display()} ({self.start_time.strftime('%Y-%m-%d %H:%M')} - {self.end_time.strftime('%H:%M')})"
 
@@ -148,8 +140,6 @@ class Competition(models.Model):
         ordering = ['start_time']
         verbose_name = "Competition"
         verbose_name_plural = "Competitions"
-        # Add constraints if needed, e.g., unique for activity, start, end
-        # unique_together = ('activity_type', 'start_time', 'end_time') # Be careful with this
 
 class CompetitionParticipant(models.Model):
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name='participants')
@@ -179,8 +169,8 @@ class CompetitionMatch(models.Model):
 
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name='matches')
     match_type = models.CharField(max_length=5, choices=MATCH_TYPE_CHOICES)
-    round_number = models.PositiveIntegerField(null=True, blank=True) # Optional: For tournament structures
-    match_datetime = models.DateTimeField(null=True, blank=True) # Optional: If matches are scheduled within the competition
+    round_number = models.PositiveIntegerField(null=True, blank=True) # For tournament structures
+    match_datetime = models.DateTimeField(null=True, blank=True) # If matches are scheduled within the competition
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -205,7 +195,6 @@ class MatchParticipant(models.Model):
     ]
 
     match = models.ForeignKey(CompetitionMatch, on_delete=models.CASCADE, related_name='participants')
-    # Link directly to User. Ensure user is also a CompetitionParticipant if needed via validation.
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='match_participations')
     team = models.CharField(max_length=10, null=True, blank=True) # e.g., 'A', 'B' or 'Team 1', 'Team 2' for 2v2
     result_type = models.CharField(max_length=10, choices=RESULT_TYPE_CHOICES, default='pending')

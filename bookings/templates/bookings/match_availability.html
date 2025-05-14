@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (!csrfToken) {
         console.error("CSRF Token input field not found! Automatic saving will fail.");
-        // Optionally alert the user or disable clicking
+
     }
 
     if (timeGrid && csrfToken) { // Only add listener if grid and token are found

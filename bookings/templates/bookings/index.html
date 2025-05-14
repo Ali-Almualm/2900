@@ -222,7 +222,6 @@
             const confirmTextElement = document.getElementById('confirm-text');
             const confirmYesButton = document.getElementById('confirm-yes-button');
             const confirmCancelButton = document.getElementById('confirm-cancel-button');
-            // Optional: const confirmTitle = document.getElementById('confirm-title');
 
             if (!confirmOverlay || !confirmTextElement || !confirmYesButton || !confirmCancelButton) {
                  console.error("Confirmation modal elements not found! Check base.html.");
@@ -234,7 +233,6 @@
             }
 
             confirmTextElement.textContent = message;
-            // Optional: confirmTitle.textContent = "Please Confirm";
 
             const cancelListener = () => {
                 confirmOverlay.style.display = 'none';
