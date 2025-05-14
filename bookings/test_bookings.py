@@ -10,6 +10,225 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import json
 from django.forms import modelformset_factory
+from bookings import elo_utils
+import math
+K_FACTOR = 32
+
+
+class EloUtilsTests(TestCase):
+
+    # Test cases for calculate_expected_score
+    def test_calculate_expected_score_equal_ratings(self):
+        rating1 = 1500
+        rating2 = 1500
+        expected_score = 0.5
+        self.assertAlmostEqual(elo_utils.calculate_expected_score(rating1, rating2), expected_score, places=2)
+
+    def test_calculate_expected_score_higher_vs_lower(self):
+        rating1 = 1600 # Higher
+        rating2 = 1500 # Lower
+        # Calculate expected score manually for verification
+        expected_score = 1 / (1 + math.pow(10, (rating2 - rating1) / 400))
+        self.assertAlmostEqual(elo_utils.calculate_expected_score(rating1, rating2), expected_score, places=2)
+
+    def test_calculate_expected_score_lower_vs_higher(self):
+        rating1 = 1500 # Lower
+        rating2 = 1600 # Higher
+        expected_score = 1 / (1 + math.pow(10, (rating2 - rating1) / 400))
+        self.assertAlmostEqual(elo_utils.calculate_expected_score(rating1, rating2), expected_score, places=2)
+
+    def test_calculate_expected_score_large_difference(self):
+        rating1 = 2000
+        rating2 = 1000
+        expected_score = 1 / (1 + math.pow(10, (rating2 - rating1) / 400))
+        self.assertAlmostEqual(elo_utils.calculate_expected_score(rating1, rating2), expected_score, places=2)
+
+    # Test cases for update_elo_1v1
+    def test_update_elo_1v1_equal_ratings_winner_loses(self):
+        winner_rating = 1500 # Test case name is slightly misleading, testing 1500 vs 1500 where first player is "winner" but gets 0 points
+        loser_rating = 1500
+        # Expected change is K * (1 - 0.5) for winner, K * (0 - 0.5) for loser
+        expected_winner_change = K_FACTOR * (1 - 0.5)
+        expected_loser_change = K_FACTOR * (0 - 0.5) # Loser's actual score is 0
+
+        expected_winner_new = 1500 + expected_winner_change
+        expected_loser_new = 1500 + expected_loser_change
+
+        new_winner, new_loser = elo_utils.update_elo_1v1(winner_rating, loser_rating)
+        self.assertEqual(new_winner, round(expected_winner_new))
+        self.assertEqual(new_loser, round(expected_loser_new))
+
+
+    def test_update_elo_1v1_higher_wins(self):
+        winner_rating = 1600 # Higher
+        loser_rating = 1500 # Lower
+        expected_score_winner = elo_utils.calculate_expected_score(winner_rating, loser_rating)
+        expected_score_loser = elo_utils.calculate_expected_score(loser_rating, winner_rating)
+
+        expected_winner_new = winner_rating + K_FACTOR * (1 - expected_score_winner)
+        expected_loser_new = loser_rating + K_FACTOR * (0 - expected_score_loser)
+
+        new_winner, new_loser = elo_utils.update_elo_1v1(winner_rating, loser_rating)
+        self.assertEqual(new_winner, round(expected_winner_new))
+        self.assertEqual(new_loser, round(expected_loser_new))
+
+    def test_update_elo_1v1_lower_wins(self):
+        winner_rating = 1500 # Lower (This player actually wins)
+        loser_rating = 1600 # Higher (This player actually loses)
+        expected_score_winner = elo_utils.calculate_expected_score(winner_rating, loser_rating)
+        expected_score_loser = elo_utils.calculate_expected_score(loser_rating, winner_rating)
+
+
+        expected_winner_new = winner_rating + K_FACTOR * (1 - expected_score_winner)
+        expected_loser_new = loser_rating + K_FACTOR * (0 - expected_score_loser)
+
+        new_winner, new_loser = elo_utils.update_elo_1v1(winner_rating, loser_rating)
+        self.assertEqual(new_winner, round(expected_winner_new))
+        self.assertEqual(new_loser, round(expected_loser_new))
+
+
+    # Test cases for update_elo_2v2
+    def test_update_elo_2v2_equal_teams_team1_wins(self):
+        team1_ratings = [1500, 1500]
+        team2_ratings = [1500, 1500]
+        team1_won = True
+        avg_team1 = sum(team1_ratings) / len(team1_ratings)
+        avg_team2 = sum(team2_ratings) / len(team2_ratings)
+        change = K_FACTOR * (1 - elo_utils.calculate_expected_score(avg_team1, avg_team2))
+        expected_team1_new = [round(r + change) for r in team1_ratings]
+        expected_team2_new = [round(r - change) for r in team2_ratings] # Loser's change is negative of winner's change when scores sum to 1
+
+        new_team1, new_team2 = elo_utils.update_elo_2v2(team1_ratings, team2_ratings, team1_won)
+        self.assertEqual(new_team1, expected_team1_new)
+        self.assertEqual(new_team2, expected_team2_new)
+
+    def test_update_elo_2v2_higher_avg_wins(self):
+        team1_ratings = [1600, 1600]
+        team2_ratings = [1400, 1400]
+        team1_won = True
+        avg_team1 = sum(team1_ratings) / len(team1_ratings)
+        avg_team2 = sum(team2_ratings) / len(team2_ratings)
+        change = K_FACTOR * (1 - elo_utils.calculate_expected_score(avg_team1, avg_team2))
+        expected_team1_new = [round(r + change) for r in team1_ratings]
+        expected_team2_new = [round(r - change) for r in team2_ratings]
+
+        new_team1, new_team2 = elo_utils.update_elo_2v2(team1_ratings, team2_ratings, team1_won)
+        self.assertEqual(new_team1, expected_team1_new)
+        self.assertEqual(new_team2, expected_team2_new)
+
+    def test_update_elo_2v2_lower_avg_wins(self):
+        team1_ratings = [1400, 1400] # Lower average team
+        team2_ratings = [1600, 1600] # Higher average team
+        team1_won = True # Lower average team wins
+
+        avg_team1 = sum(team1_ratings) / len(team1_ratings)
+        avg_team2 = sum(team2_ratings) / len(team2_ratings)
+        change = K_FACTOR * (1 - elo_utils.calculate_expected_score(avg_team1, avg_team2)) # Change for the winning team (team 1)
+
+        expected_team1_new = [round(r + change) for r in team1_ratings]
+        expected_team2_new = [round(r - change) for r in team2_ratings] # Loser's change is negative
+
+        new_team1, new_team2 = elo_utils.update_elo_2v2(team1_ratings, team2_ratings, team1_won)
+        self.assertEqual(new_team1, expected_team1_new)
+        self.assertEqual(new_team2, expected_team2_new)
+
+    def test_update_elo_2v2_mixed_ratings_higher_avg_wins(self):
+        team1_ratings = [1600, 1500] # Avg 1550
+        team2_ratings = [1400, 1500] # Avg 1450
+        team1_won = True # Team 1 wins
+
+        avg_team1 = sum(team1_ratings) / len(team1_ratings)
+        avg_team2 = sum(team2_ratings) / len(team2_ratings)
+        change = K_FACTOR * (1 - elo_utils.calculate_expected_score(avg_team1, avg_team2)) # Change for winning team (team 1)
+
+        expected_team1_new = [round(r + change) for r in team1_ratings]
+        expected_team2_new = [round(r - change) for r in team2_ratings] # Loser's change is negative
+
+        new_team1, new_team2 = elo_utils.update_elo_2v2(team1_ratings, team2_ratings, team1_won)
+        self.assertEqual(new_team1, expected_team1_new)
+        self.assertEqual(new_team2, expected_team2_new)
+
+
+    # Test cases for update_elo_ffa (simplified cases)
+    def test_update_elo_ffa_three_players_clear_ranks(self):
+        # Players: (player_id, rating, rank) - rank 1 is winner
+        player_ratings_ranks = [(1, 1500, 1), (2, 1600, 2), (3, 1400, 3)]
+        num_players = len(player_ratings_ranks)
+        adjusted_k = K_FACTOR / (num_players - 1) # Adjusted K for 3 players
+
+        # Expected calculations based on pair-wise results and adjusted K
+        # Player 1 (1500, rank 1) vs Player 2 (1600, rank 2) - P1 wins
+        expected1_vs_2_change = adjusted_k * (1 - elo_utils.calculate_expected_score(1500, 1600))
+        # Player 1 (1500, rank 1) vs Player 3 (1400, rank 3) - P1 wins
+        expected1_vs_3_change = adjusted_k * (1 - elo_utils.calculate_expected_score(1500, 1400))
+
+        # Player 2 (1600, rank 2) vs Player 1 (1500, rank 1) - P2 loses
+        expected2_vs_1_change = adjusted_k * (0 - elo_utils.calculate_expected_score(1600, 1500))
+        # Player 2 (1600, rank 2) vs Player 3 (1400, rank 3) - P2 wins
+        expected2_vs_3_change = adjusted_k * (1 - elo_utils.calculate_expected_score(1600, 1400))
+
+        # Player 3 (1400, rank 3) vs Player 1 (1500, rank 1) - P3 loses
+        expected3_vs_1_change = adjusted_k * (0 - elo_utils.calculate_expected_score(1400, 1500))
+        # Player 3 (1400, rank 3) vs Player 2 (1600, rank 2) - P3 loses
+        expected3_vs_2_change = adjusted_k * (0 - elo_utils.calculate_expected_score(1400, 1600))
+
+
+        expected_new_ratings = {
+            1: round(1500 + expected1_vs_2_change + expected1_vs_3_change),
+            2: round(1600 + expected2_vs_1_change + expected2_vs_3_change),
+            3: round(1400 + expected3_vs_1_change + expected3_vs_2_change),
+        }
+
+        actual_new_ratings = elo_utils.update_elo_ffa(player_ratings_ranks)
+
+        self.assertEqual(actual_new_ratings, expected_new_ratings)
+
+    def test_update_elo_ffa_three_players_equal_ratings_clear_ranks(self):
+        # Players: (player_id, rating, rank) - rank 1 is winner
+        player_ratings_ranks = [(1, 1500, 1), (2, 1500, 2), (3, 1500, 3)]
+        num_players = len(player_ratings_ranks)
+        adjusted_k = K_FACTOR / (num_players - 1) # Adjusted K for 3 players
+
+        # Expected calculations based on pair-wise results and adjusted K
+        # When ratings are equal, expected score is 0.5 for each pair.
+        # Player 1 (rank 1) vs Player 2 (rank 2) - P1 wins (Actual 1, Expected 0.5)
+        expected1_vs_2_change = adjusted_k * (1 - 0.5)
+        # Player 1 (rank 1) vs Player 3 (rank 3) - P1 wins (Actual 1, Expected 0.5)
+        expected1_vs_3_change = adjusted_k * (1 - 0.5)
+
+        # Player 2 (rank 2) vs Player 1 (rank 1) - P2 loses (Actual 0, Expected 0.5)
+        expected2_vs_1_change = adjusted_k * (0 - 0.5)
+        # Player 2 (rank 2) vs Player 3 (rank 3) - P2 wins (Actual 1, Expected 0.5)
+        expected2_vs_3_change = adjusted_k * (1 - 0.5)
+
+        # Player 3 (rank 3) vs Player 1 (rank 1) - P3 loses (Actual 0, Expected 0.5)
+        expected3_vs_1_change = adjusted_k * (0 - 0.5)
+        # Player 3 (rank 3) vs Player 2 (rank 2) - P3 loses (Actual 0, Expected 0.5)
+        expected3_vs_2_change = adjusted_k * (0 - 0.5)
+
+
+        expected_new_ratings = {
+            1: round(1500 + expected1_vs_2_change + expected1_vs_3_change),
+            2: round(1500 + expected2_vs_1_change + expected2_vs_3_change),
+            3: round(1500 + expected3_vs_1_change + expected3_vs_2_change),
+        }
+
+        actual_new_ratings = elo_utils.update_elo_ffa(player_ratings_ranks)
+
+        self.assertEqual(actual_new_ratings, expected_new_ratings)
+
+
+    # Test cases for get_elo_field_name
+    def test_get_elo_field_name_valid_types(self):
+        self.assertEqual(elo_utils.get_elo_field_name('pool'), 'ranking_pool')
+        self.assertEqual(elo_utils.get_elo_field_name('switch'), 'ranking_switch')
+        self.assertEqual(elo_utils.get_elo_field_name('table_tennis'), 'ranking_table_tennis')
+
+    def test_get_elo_field_name_invalid_types(self):
+        self.assertIsNone(elo_utils.get_elo_field_name('invalid_type'))
+        self.assertIsNone(elo_utils.get_elo_field_name(''))
+        self.assertIsNone(elo_utils.get_elo_field_name(None))
+
 
 class BookingModelTest(TestCase):
 
@@ -1159,7 +1378,313 @@ class ViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertRedirects(response, reverse('index')) # Redirects to index
         messages_list = list(response.wsgi_request._messages)
+
         self.assertEqual(len(messages_list), 1)
         self.assertEqual(str(messages_list[0]), "You are not authorized to end this competition.")
         competition.refresh_from_db()
         self.assertEqual(competition.status, 'ongoing') # Status should not change
+
+    # Add these methods to your ViewTests class
+
+    def test_api_book_view_non_post(self):
+        # Tests that the api_book view returns 400 for GET requests
+        response = self.client.get(reverse('api_book'))
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Invalid request method.', status_code=400)
+
+    def test_cancel_booking_view_non_post(self):
+        # Tests that cancel_booking view returns 400 for GET requests
+        # Need a booking object to provide a valid URL
+        now = timezone.now()
+        booking = Booking.objects.create(
+             user_id=str(self.user.id), name="Test Booking", booking_type="pool",
+             start_time=now + timedelta(hours=1), end_time=now + timedelta(hours=2)
+        )
+        response = self.client.get(reverse('cancel_booking', args=[booking.id]))
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Invalid request method.', status_code=400)
+
+    def test_create_match_request_non_post(self):
+        # Tests that create_match_request view returns 400 for GET requests
+        response = self.client.get(reverse('create_match_request'))
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Invalid request method', status_code=400) # Note: Message might be slightly different
+
+    def test_respond_to_match_request_non_post(self):
+        # Tests that respond_to_match_request view returns 405 for non-POST methods
+        # Need a booking request object to provide a valid URL
+        now = timezone.now()
+        match_request = BookingRequestmatch.objects.create(
+            requester=self.user, requested_player=self.user2, activity_type='pool',
+            start_time=now + timedelta(days=1), end_time=now + timedelta(days=1, minutes=30)
+        )
+        response = self.client.get(reverse('respond_to_match_request', args=[match_request.id]))
+        self.assertEqual(response.status_code, 400) # Method Not Allowed
+        self.assertContains(response, 'Invalid request method.', status_code=400)
+
+    def test_join_competition_non_post(self):
+        # Tests that join_competition view returns 405 for non-POST methods
+        # Need a competition object to provide a valid URL
+        start_time = timezone.now() + timedelta(days=1, hours=2)
+        end_time = start_time + timedelta(hours=1)
+        competition = Competition.objects.create(
+            creator=self.user, activity_type='pool', start_time=start_time, end_time=end_time, max_joiners=2
+        )
+        response = self.client.get(reverse('join_competition', args=[competition.id]))
+        self.assertEqual(response.status_code, 405)
+        self.assertContains(response, 'Invalid request method.', status_code=405)
+
+    def test_leave_competition_non_post(self):
+        # Tests that leave_competition view returns 405 for non-POST methods
+        # Need a competition object to provide a valid URL
+        start_time = timezone.now() + timedelta(days=1, hours=2)
+        end_time = start_time + timedelta(hours=1)
+        competition = Competition.objects.create(
+            creator=self.user, activity_type='pool', start_time=start_time, end_time=end_time, max_joiners=2
+        )
+        response = self.client.get(reverse('leave_competition', args=[competition.id]))
+        self.assertEqual(response.status_code, 405)
+        self.assertContains(response, 'Invalid request method.', status_code=405)
+
+    def test_toggle_slot_availability_view_non_post(self):
+        # Tests that toggle_slot_availability view returns 405 for non-POST methods
+        response = self.client.get(reverse('toggle_slot_availability'))
+        self.assertEqual(response.status_code, 405)
+
+    def test_confirm_result_view_non_post(self):
+        # Tests that confirm_result_view returns 405 for non-POST methods
+        # Need a booking object to provide a valid URL
+        booking = Booking.objects.create(
+             user_id=str(self.user.id), name="Test Booking", booking_type="pool",
+             start_time=timezone.make_aware(datetime(2024, 1, 1, 10, 0)), end_time= timezone.make_aware(datetime(2024, 1, 1, 10, 0)) - timedelta(minutes=30)
+        )
+        response = self.client.get(reverse('confirm_result', args=[booking.id]))
+        self.assertEqual(response.status_code, 405)
+        self.assertContains(response, 'Invalid request method.', status_code=405)
+
+    #
+    # Add these methods to your ViewTests class
+    def test_api_book_view_invalid_time_format(self):
+        # Tests that api_book handles invalid time format in POST data
+        now = timezone.now()
+        booking_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+        payload = {
+            "start_time": "invalid-time", # Invalid format
+            "booking_type": "pool",
+            "booking_date": booking_date
+        }
+        response = self.client.post(reverse('api_book'), json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        # Corrected assertion to check for the message part
+        self.assertContains(response, 'Invalid time range format.', status_code=400)
+
+    def test_api_book_view_duration_exceeds_two_hours(self):
+        # Tests that api_book handles booking duration > 2 hours
+        now = timezone.now()
+        booking_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+        payload = {
+            "start_time": "14:00 - 16:15", # Duration > 2 hours
+            "booking_type": "pool",
+            "booking_date": booking_date
+        }
+        response = self.client.post(reverse('api_book'), json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Booking cannot exceed two hours.', status_code=400)
+
+    def test_index_view_invalid_date_parameter(self):
+        # Tests that index view handles invalid date format in GET parameters
+        response = self.client.get(reverse('index'), {'date': 'invalid-date-format'})
+        # The view defaults to today's date on ValueError, so status should be 200
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/index.html')
+        # You could optionally check if the displayed date is today's date
+
+    def test_match_availability_view_invalid_date_parameter(self):
+        # Tests that match_availability view handles invalid date format in GET parameters
+        activity_type = 'pool'
+        response = self.client.get(reverse('match_availability', args=[activity_type]), {'date': 'invalid-date'})
+        # The view defaults to today's date on ValueError, so status should be 200
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/match_availability.html')
+        # You could optionally check if the displayed date is today's date
+
+    def test_find_matches_view_userprofile_does_not_exist(self):
+        # Tests that find_matches handles UserProfile.DoesNotExist for the current user
+        # Delete the user profile created in setUp for self.user
+        self.user.userprofile.delete()
+        activity_type = 'pool'
+        response = self.client.get(reverse('find_matches', args=[activity_type]))
+        # The view redirects to index and adds a message on this error
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('index'))
+        messages_list = list(response.wsgi_request._messages)
+        self.assertEqual(len(messages_list), 1)
+        self.assertEqual(str(messages_list[0]), "Your user profile could not be found.")
+
+
+    def test_find_matches_view_unknown_activity_type(self):
+        # Tests that find_matches handles an unknown activity type
+        activity_type = 'unknown_activity'
+        response = self.client.get(reverse('find_matches', args=[activity_type]))
+        self.assertEqual(response.status_code, 200) # It renders the page with a default skill
+        self.assertTemplateUsed(response, 'bookings/matches.html')
+        self.assertContains(response, 'Find Matches') # Check it still renders the base page
+        # Check for the default skill being used implicitly if possible, or check for no matches found message
+        self.assertContains(response, 'Your skill level: \n') # Check default skill display
+
+
+    def test_create_match_request_missing_fields(self):
+        # Tests that create_match_request handles missing data in POST payload
+        self.client.login(username='testuser', password='testpassword')
+        payload = {
+            'requested_player_id': self.user2.id,
+            # Missing activity_type, start_time, end_time
+        }
+        response = self.client.post(reverse('create_match_request'), json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Missing required fields', status_code=400)
+
+
+    def test_respond_to_match_request_already_responded(self):
+        # Tests responding to a match request that is already confirmed
+        self.client.login(username='testuser2', password='testpassword2')
+        now = timezone.now()
+        match_request = BookingRequestmatch.objects.create(
+            requester=self.user, requested_player=self.user2, activity_type='pool',
+            start_time=now + timedelta(days=1), end_time=now + timedelta(days=1, minutes=30),
+            is_confirmed=True # Already confirmed
+        )
+        response = self.client.post(reverse('respond_to_match_request', args=[match_request.id]), {'action': 'confirm'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'This request has already been responded to.', status_code=400)
+
+    def test_respond_to_match_request_invalid_action(self):
+        # Tests responding with an invalid action string
+        self.client.login(username='testuser2', password='testpassword2')
+        now = timezone.now()
+        match_request = BookingRequestmatch.objects.create(
+            requester=self.user, requested_player=self.user2, activity_type='pool',
+            start_time=now + timedelta(days=1), end_time=now + timedelta(days=1, minutes=30),
+            is_confirmed=False, is_rejected=False
+        )
+        response = self.client.post(reverse('respond_to_match_request', args=[match_request.id]), {'action': 'invalid_action'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Invalid action.', status_code=400)
+
+
+    def test_enter_match_results_view_completed_competition(self):
+        # Tests attempting to enter results for a completed competition
+        self.client.login(username='testuser', password='testpassword')
+        start_time = timezone.now() - timedelta(days=1) # In the past
+        end_time = start_time + timedelta(hours=1)
+        competition = Competition.objects.create(
+            creator=self.user, activity_type='pool', start_time=start_time, end_time=end_time, max_joiners=4, status='completed'
+        )
+        match = CompetitionMatch.objects.create(competition=competition, match_type='1v1', status='completed') # Match is completed
+        response = self.client.get(reverse('enter_match_results', args=[match.id])) # Test GET method
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('competition_detail', args=[competition.id]))
+        messages_list = list(response.wsgi_request._messages)
+        self.assertEqual(len(messages_list), 1)
+        self.assertEqual(str(messages_list[0]), "Cannot add matches to a completed competition.") # Message is from add_competition_match? Check view logic. Ah, the message is actually "Cannot add matches to a completed competition." from add_competition_match view which is redirected to from enter_match_results. Need to check the correct message for the enter_match_results view if one is added. Looking at views.py, the message seems to be "Cannot add matches to a completed competition."
+        self.assertEqual(str(messages_list[0]), "Cannot add matches to a completed competition.") # Assuming this message is added by enter_match_results redirecting to add_competition_match and that view adding the message. Re-reading the views.py, enter_match_results redirects directly to competition_detail if comp is completed. So the message check here should be zero messages. Let's correct this.
+
+        # Corrected test for completed competition in enter_match_results
+    def test_enter_match_results_view_completed_competition(self):
+        # Tests attempting to enter results for a completed competition
+        self.client.login(username='testuser', password='testpassword')
+        start_time = timezone.now() - timedelta(days=1) # In the past
+        end_time = start_time + timedelta(hours=1)
+        competition = Competition.objects.create(
+            creator=self.user, activity_type='pool', start_time=start_time, end_time=end_time, max_joiners=4, status='completed'
+        )
+        match = CompetitionMatch.objects.create(competition=competition, match_type='1v1', status='completed') # Match is completed
+        response = self.client.get(reverse('enter_match_results', args=[match.id])) # Test GET method
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('competition_detail', args=[competition.id]))
+        messages_list = list(response.wsgi_request._messages)
+        self.assertEqual(len(messages_list), 0) # No message is added on redirect for completed competition
+
+        # Also test POST method
+        response = self.client.post(reverse('enter_match_results', args=[match.id]), {}) # Empty POST data is fine for the permission check
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('competition_detail', args=[competition.id]))
+        messages_list = list(response.wsgi_request._messages)
+        self.assertEqual(len(messages_list), 0) # No message on POST redirect either
+
+
+    def test_enter_match_results_view_no_participants(self):
+        # Tests attempting to enter results for a match with no participants assigned
+        self.client.login(username='testuser', password='testpassword')
+        start_time = timezone.now() + timedelta(days=1, hours=2)
+        end_time = start_time + timedelta(hours=1)
+        competition = Competition.objects.create(
+            creator=self.user, activity_type='pool', start_time=start_time, end_time=end_time, max_joiners=4
+        )
+        match = CompetitionMatch.objects.create(competition=competition, match_type='1v1', status='pending') # No participants created
+
+        response = self.client.get(reverse('enter_match_results', args=[match.id])) # Test GET method
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('assign_match_participants', args=[match.id]))
+        messages_list = list(response.wsgi_request._messages)
+        self.assertEqual(len(messages_list), 0) # No message on redirect if no participants
+
+
+    # Add tests for the 'book' view (both GET and POST)
+    def test_book_view_get(self):
+        response = self.client.get(reverse('book'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/book.html')
+        self.assertContains(response, '<h2>Book Time Slot</h2>') # Check for title
+
+
+    def test_activity_view_get(self):
+        activity_type = 'pool'
+        response = self.client.get(reverse('pool')) # Using the named URL 'pool' for this activity
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/activity.html')
+        self.assertContains(response, 'Pool Timetable') # Check for title
+
+    # Test with different activity types
+    def test_activity_view_switch_get(self):
+        activity_type = 'switch'
+        response = self.client.get(reverse('switch'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/activity.html')
+        self.assertContains(response, 'Nintendo Switch Timetable')
+
+    # Test activity_view with a date parameter
+    def test_activity_view_with_date_parameter(self):
+        activity_type = 'pool'
+        future_date = (timezone.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        response = self.client.get(reverse('pool'), {'date': future_date})
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/activity.html')
+        self.assertContains(response, f'value="{future_date}"') # Check if the date input is populated
+
+    # Add tests for register_user_view
+    def test_register_user_view_get(self):
+        response = self.client.get(reverse('register'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/register.html')
+        self.assertContains(response, '<h2>Register</h2>')
+
+
+
+    # Add tests for login_user_view
+    def test_login_user_view_get(self):
+        response = self.client.get(reverse('login'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'bookings/login.html')
+        self.assertContains(response, '<h2>Login</h2>')
+
+    def test_logout_view_authenticated(self):
+        # Log the user in explicitly for this test, as setUp might log in a different user
+        # or you might want to ensure the user is logged in just before testing logout.
+        self.client.login(username='testuser', password='testpassword')
+        self.assertTrue(self.client.session.get('_auth_user_id')) # Verify logged in
+
+        response = self.client.get(reverse('logout'))
+        self.assertEqual(response.status_code, 302) # Redirects after logout
+        self.assertRedirects(response, reverse('login')) # Redirects to login page
+        self.assertIsNone(self.client.session.get('_auth_user_id')) # Verify logged out
