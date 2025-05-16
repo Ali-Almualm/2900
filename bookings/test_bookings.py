@@ -917,11 +917,10 @@ class ViewTests(TestCase):
         CompetitionParticipant.objects.create(competition=competition, user=self.user) # Creator is participant
 
         response = self.client.post(reverse('leave_competition', args=[competition.id]))
-        # Updated assertion to expect 403 status code
         self.assertContains(response, 'Creators cannot leave their own competition this way.', status_code=403)
 
     def test_competition_detail_view_authenticated(self):
-        # Test competition detail view for authenticated user (unauthenticated test removed)
+        # Test competition detail view for authenticated user
         start_time = timezone.now() + timedelta(days=1, hours=2)
         end_time = start_time + timedelta(hours=1)
         competition = Competition.objects.create(

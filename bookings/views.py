@@ -79,24 +79,19 @@ def api_book(request):
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
 @login_required
-@csrf_exempt # Or handle CSRF token
+@csrf_exempt
 def cancel_booking(request, booking_id):
-    if request.method == "POST": # Assuming POST for cancellation now
+    if request.method == "POST":
         booking = get_object_or_404(Booking, id=booking_id)
         # Ensure only the user who booked it can cancel
-        # Adjust this check based on your user_id field type and logic
         can_cancel = False
         if request.user.is_authenticated and str(request.user.id) == booking.user_id:
              can_cancel = True
-        # Optional: Allow opponent to cancel? Needs careful consideration.
-        # elif booking.opponent and request.user.id == booking.opponent.id:
-        #     can_cancel = True
 
         if can_cancel:
             booking_details = f"{booking.get_booking_type_display()} at {booking.start_time.strftime('%H:%M')}"
             booking.delete()
             messages.success(request, f"Booking for {booking_details} cancelled successfully.") # Use Django messages
-            # Return JSON still, as JS expects it, but message is now handled by Django framework
             return JsonResponse({"message": "Booking cancelled successfully."})
         else:
             messages.error(request, "You are not authorized to cancel this booking.") # Use Django messages
@@ -117,7 +112,7 @@ def index(request):
 
     previous_date = selected_date - timedelta(days=1)
     next_date = selected_date + timedelta(days=1)
-    # --- End Date Calculation ---
+
 
     time_slots = []
     start_time_dt = datetime.combine(selected_date, datetime.min.time()).replace(hour=8, minute=0)
@@ -132,7 +127,7 @@ def index(request):
     # Fetch bookings and competitions, including opponent for bookings
     bookings = Booking.objects.filter(
         start_time__date=selected_date
-    ).select_related('opponent') # Eager load opponent
+    ).select_related('opponent')
     competitions = Competition.objects.filter(start_time__date=selected_date)
 
     ACTIVITY_TYPES = ["pool", "switch", "table_tennis"]
@@ -140,7 +135,6 @@ def index(request):
 
     for slot_start_time, slot_end_time in time_slots:
         time_slot_str = f"{slot_start_time.strftime('%H:%M')} - {slot_end_time.strftime('%H:%M')}"
-        # Ensure start_time passed to template is timezone aware if USE_TZ=True
         slot_start_datetime = timezone.make_aware(slot_start_time) if settings.USE_TZ and timezone.is_naive(slot_start_time) else slot_start_time
 
 
@@ -172,7 +166,6 @@ def index(request):
             ).first()
 
             if competition_entry:
-                # ... (competition logic remains the same) ...
                 user_is_participant = False
                 user_is_creator = False
                 if request.user.is_authenticated:
@@ -210,7 +203,6 @@ def index(request):
                         "user_id": booked_entry.user_id,
                         "is_match": is_match, # Set flag
                         "is_participant": is_participant, # Set flag
-                        # booked_by_user specifically checks if current user is the creator
                         "booked_by_user": request.user.is_authenticated and (str(request.user.id) == booked_entry.user_id)
                     })
 
@@ -254,7 +246,7 @@ def match_availability_view(request, activity_type):
 
     previous_date_dt = selected_date_dt - timedelta(days=1)
     next_date_dt = selected_date_dt + timedelta(days=1)
-    # --- End Date Calculation ---
+
 
     # --- Get Existing Availability Times ---
     existing_availabilities = MatchAvailability.objects.filter(
@@ -263,12 +255,12 @@ def match_availability_view(request, activity_type):
         start_time__date=selected_date_dt
     )
     existing_times_set = {avail.start_time.strftime("%H:%M") for avail in existing_availabilities}
-    # --- End Get Existing Times ---
+
 
     # --- Define hours and minutes for template ---
     hours_range = range(8, 24) # Numbers 8 through 23
     minutes_list = ['00', '15', '30', '45'] # Keep minutes as strings
-    # --- End Define hours and minutes ---
+
 
     context = {
         'activity_type': activity_type,
@@ -303,7 +295,6 @@ def find_matches(request, activity_type):
     now = timezone.now()
 
     # Get the user's skill level for this activity
-    # --- ADDED ELSE BLOCK ---
     if activity_type == 'pool':
         user_skill = user_profile.ranking_pool
     elif activity_type == 'switch':
@@ -315,10 +306,6 @@ def find_matches(request, activity_type):
         user_skill = 1500 # Assign default ranking (same as model default)
         # Log a warning - useful for debugging unexpected activity types
         print(f"WARNING: Unknown activity_type '{activity_type}' in find_matches for user {request.user.username}. Using default skill {user_skill}.")
-        # Alternatively, raise an error if an invalid type should stop the process:
-        # from django.http import Http404
-        # raise Http404(f"Invalid activity type provided: {activity_type}")
-    # --- END ADDED ELSE BLOCK ---
 
 
     # Get the user's FUTURE availability for this activity
@@ -333,7 +320,6 @@ def find_matches(request, activity_type):
     error_msg = None
     if not user_match_availability.exists():
          error_msg = 'You have no future match availability set. Set your availability to find matches.'
-         # Note: If we exit here, user_skill was still calculated but won't be used below
 
     # Find potential matches even if user has no availability (to still show pending requests)
     potential_matches = []
@@ -619,7 +605,7 @@ def create_match_request(request):
     return JsonResponse({'success': False, 'message': 'Invalid request method'}, status=400)
 
 @login_required
-@csrf_exempt # Keep csrf_exempt for now, but ideally handle CSRF token in JS fetch
+@csrf_exempt
 @transaction.atomic # Wrap in transaction for safety
 def respond_to_match_request(request, booking_request_id):
     """Respond to a match request by confirming or rejecting it."""
@@ -658,12 +644,10 @@ def respond_to_match_request(request, booking_request_id):
                     end_time__gt=booking_request.start_time
                 )
                 if overlapping_bookings.exists():
-                     # You might want to list the conflicting booking details if possible
                      return JsonResponse({
                          'success': False,
                          'message': f"Cannot confirm: This time overlaps with an existing booking for {booking_request.activity_type}."
                      }, status=409) # 409 Conflict
-                # ---- END: Add booking conflict check ----
 
 
                 # Create a new booking if no conflicts found
@@ -728,7 +712,6 @@ def create_competition(request):
             activity_url = reverse(competition.activity_type) # e.g., reverse('pool')
             return redirect("index")
         else:
-             # Pass the form with errors back to the template
             pass # Fall through to render the form again
     else:
         form = CompetitionForm()
@@ -736,7 +719,7 @@ def create_competition(request):
     return render(request, 'bookings/create_competition.html', {'form': form})
 
 @login_required
-@csrf_exempt # Use csrf_exempt carefully or handle CSRF properly via JS fetch headers
+@csrf_exempt
 def join_competition(request, competition_id):
     if request.method == 'POST':
         competition = get_object_or_404(Competition, id=competition_id)
@@ -754,7 +737,7 @@ def join_competition(request, competition_id):
         if competition.is_full():
             return JsonResponse({'success': False, 'message': 'This competition is already full.'}, status=400)
 
-        # --- UPDATED Conflict Check ---
+
         # Check for time conflicts: User is creator OR opponent in a Booking
         user_bookings = Booking.objects.filter(
             Q(user_id=str(user.id)) | Q(opponent=user), # Use Q object to check both fields
@@ -775,7 +758,7 @@ def join_competition(request, competition_id):
              # Optional: Add more details like the time of the conflict if needed
              print(f"DEBUG: Join conflict for user {user.username} joining comp {competition_id}. Conflict with {conflict_type}.") # Debugging
              return JsonResponse({'success': False, 'message': f'You have a time conflict with this competition (due to an existing {conflict_type}).'}, status=400)
-        # --- End UPDATED Conflict Check ---
+
 
         # If no conflicts, join the competition
         CompetitionParticipant.objects.create(competition=competition, user=user)
@@ -822,9 +805,9 @@ def match_history_view(request):
         # Add the found creator user object as an attribute to the match instance
         match.creator_user = creator_user_obj
         match_history_list.append(match)
-    # --- End Fetch Creator Usernames ---
 
-    # Debugging: Print match history to the console (optional)
+
+
     print("Match History List (with creator_user attached):")
     for match in match_history_list:
         creator_name = match.creator_user.username if match.creator_user else f"ID:{match.user_id}"
@@ -945,14 +928,14 @@ def confirm_result_view(request, booking_id):
                     booking.opponent_result = 'pending'
                     booking.save() # Save the reset status
 
-                    # === ADDED DEBUGGING ===
+
                     # Re-fetch from DB right after save to confirm persisted state
                     try:
                         reloaded_booking = Booking.objects.get(id=booking_id)
                         print(f"Match {booking_id}: CONFIRMED STATE AFTER RESET+SAVE - User='{reloaded_booking.user_result}', Opponent='{reloaded_booking.opponent_result}'")
                     except Booking.DoesNotExist:
                          print(f"!!! Error: Booking {booking_id} not found immediately after save?!")
-                    # ========================
+
 
                     messages.warning(request, "Conflicting results submitted. Both results reset to pending.")
 
@@ -985,7 +968,7 @@ def confirm_result_view(request, booking_id):
 
 
 @login_required
-@csrf_exempt # Or ensure CSRF token is handled in JS fetch
+@csrf_exempt
 @transaction.atomic # Ensures the operation is atomic
 def leave_competition(request, competition_id):
     if request.method == 'POST': # Using POST for simplicity, DELETE might be semantically better
@@ -1016,9 +999,6 @@ def complete_competition(request, competition_id):
     # Permission Check: Only the creator can complete it
     if request.user != competition.creator:
         messages.error(request, "You are not authorized to end this competition.")
-        # Redirect somewhere appropriate, maybe the competition detail page if it exists, or index
-        # If you create competition_detail view later, redirect there:
-        # return redirect('competition_detail', competition_id=competition.id)
         return redirect('index') # Fallback redirect
 
     # Update status
@@ -1027,12 +1007,8 @@ def complete_competition(request, competition_id):
 
     messages.success(request, f"Competition '{competition}' marked as completed.")
 
-    # Redirect back to the competition detail page or the activity page
-    # activity_url = reverse(competition.activity_type) # e.g., reverse('pool')
-    # return redirect(f"{activity_url}?date={competition.start_time.strftime('%Y-%m-%d')}")
-    # Or redirect to competition detail page if you have one:
-    # return redirect('competition_detail', competition_id=competition.id)
-    return redirect('index') # Fallback redirect for now
+
+    return redirect('index') 
 
 
 def competition_detail(request, competition_id):
@@ -1052,7 +1028,7 @@ def competition_detail(request, competition_id):
         'participants': participants,
         'matches': matches,
         'is_creator': is_creator,
-        'has_completed_matches': has_completed_matches, # Pass the boolean flag here
+        'has_completed_matches': has_completed_matches,
     }
     return render(request, 'bookings/competition_detail.html', context)
 
@@ -1069,7 +1045,7 @@ def add_competition_match(request, competition_id):
     if competition.status == 'completed':
         messages.warning(request, "Cannot add matches to a completed competition.")
         return redirect('competition_detail', competition_id=competition.id)
-    # --- End Permission Checks ---
+
 
     if request.method == 'POST':
         # Pass the competition object to the form if needed for validation
@@ -1080,15 +1056,12 @@ def add_competition_match(request, competition_id):
             match.status = 'pending' # Matches start as pending
             match.save()
             messages.success(request, f"Match ({match.get_match_type_display()}) created successfully. Now add participants.")
-            # Redirect back to the detail page where the new match will be listed
-            # Consider redirecting to a participant assignment page later:
-            # return redirect('assign_match_participants', match_id=match.id)
             return redirect('competition_detail', competition_id=competition.id)
         else:
             # Form is invalid, errors will be displayed by the template rendering below
             messages.error(request, "Please correct the errors below.")
     else: # GET request
-        form = CompetitionMatchForm(competition=competition) # Pass competition for potential validation
+        form = CompetitionMatchForm(competition=competition)
 
     context = {
         'form': form,
@@ -1110,7 +1083,7 @@ def assign_match_participants(request, match_id):
     if competition.status == 'completed':
         messages.warning(request, "Cannot manage participants for a completed competition.")
         return redirect('competition_detail', competition_id=competition.id)
-    # --- End Permission Checks ---
+
 
     # Get users who joined the competition
     competition_participants = CompetitionParticipant.objects.filter(competition=competition)
@@ -1122,11 +1095,8 @@ def assign_match_participants(request, match_id):
         num_participants_expected = 2
     elif match.match_type == '2v2':
         num_participants_expected = 4
-    else: # FFA - Handle differently? For now, let's allow adding many.
-        # We might need an "Add Player" button & JS for true FFA flexibility
-        # Let's set a max for now or allow creator to manage extras
-        num_participants_expected = competition.participants.count() # Default to max possible? Or a smaller number? Let's start flexible.
-        # Or set extra=1 to add one at a time? For now, let's manage existing + maybe 1 extra.
+    else: # FFA
+        num_participants_expected = competition.participants.count()
 
     # --- Create the Formset ---
     # We manage existing participants + allow adding up to the expected number
@@ -1197,7 +1167,7 @@ def assign_match_participants(request, match_id):
                     # Final validation based on match type (after processing all forms)
                     if match.match_type in ['1v1', '2v2'] and valid_count != num_participants_expected:
                          raise forms.ValidationError(f"Incorrect number of participants for a {match.get_match_type_display()} match. Expected {num_participants_expected}, got {valid_count}.")
-                    # Add validation for 2v2 teams if needed (e.g., ensure teams A and B exist)
+
 
                 messages.success(request, "Match participants updated successfully.")
                 return redirect('competition_detail', competition_id=competition.id)
@@ -1256,7 +1226,7 @@ def enter_match_results(request, match_id):
     activity_type = competition.activity_type
     print(f"Match Type: {match.match_type}, Activity Type: {activity_type}") # DEBUG
 
-    # --- Permission Checks (keep these) ---
+    # --- Permission Checks ---
     if request.user != competition.creator:
         # ... error handling ...
         return redirect('competition_detail', competition_id=competition.id)
@@ -1266,7 +1236,7 @@ def enter_match_results(request, match_id):
     if not match.participants.exists():
         # ... error handling ...
         return redirect('assign_match_participants', match_id=match.id)
-    # --- End Permission Checks ---
+
 
     is_editing = match.status == 'completed'
     print(f"Is Editing: {is_editing}") # DEBUG
@@ -1285,13 +1255,12 @@ def enter_match_results(request, match_id):
 
         if formset.is_valid():
             print("Formset IS valid. Proceeding with saving results and Elo update.") # DEBUG
-            # This try/except is now within the @transaction.atomic context
             try:
                 participants_data = {}
                 ranks_entered = set()
                 teams_results = {}
 
-                # First pass: Save individual results and collect data
+                # Save individual results and collect data
                 print("Saving individual participant results...") # DEBUG
                 for form in formset:
                     # Check if form has data AND is valid (though formset.is_valid() checks all)
@@ -1301,7 +1270,7 @@ def enter_match_results(request, match_id):
                          result_rank_score = form.cleaned_data.get('result_rank_score')
                          print(f"  Processing participant: {instance.user.username}, Simple: {result_simple}, Rank/Score: {result_rank_score}") # DEBUG
 
-                         # Your logic to save instance fields based on match type
+                         # Logic to save results
                          if match.match_type == 'ffa':
                              instance.result_type = 'rank'
                              instance.result_value = result_rank_score
@@ -1314,7 +1283,7 @@ def enter_match_results(request, match_id):
                              # Collect team info if 2v2
                              if match.match_type == '2v2':
                                  team = instance.team
-                                 if not team: raise forms.ValidationError(f"Team missing for {instance.user.username} in 2v2 match.") # Add validation
+                                 if not team: raise forms.ValidationError(f"Team missing for {instance.user.username} in 2v2 match.")
                                  if team not in teams_results: teams_results[team] = []
                                  teams_results[team].append({'instance': instance, 'result': result_simple})
 
@@ -1334,7 +1303,6 @@ def enter_match_results(request, match_id):
                      if not ((results.count('win') == 1 and results.count('loss') == 1) or (results.count('draw') == 2)):
                           print("!!! 1v1 Validation Failed: Incorrect Win/Loss/Draw combination.") # DEBUG
                           raise forms.ValidationError("Invalid results for 1v1. Must be one Win & one Loss, or two Draws.")
-                # ... add validation checks for 2v2 and FFA ...
                 print("Post-save validation passed.")# DEBUG
 
                 # --- Elo Calculation and Update ---
@@ -1381,9 +1349,7 @@ def enter_match_results(request, match_id):
                          # --- 2v2 Elo ---
                          elif match.match_type == '2v2':
                              # (Group players, calculate avg, call update_elo_2v2, save profiles)
-                             # Add print statements within this block similar to 1v1
                              print("    Processing 2v2 Elo...") # DEBUG
-                             # ... detailed 2v2 logic with prints ...
                              try:
                                 teamA_ratings, teamB_ratings = [], []
                                 teamA_profiles, teamB_profiles = [], []
@@ -1416,7 +1382,6 @@ def enter_match_results(request, match_id):
                          # --- FFA Elo ---
                          elif match.match_type == 'ffa':
                              # (Prepare list of (id, rating, rank), call update_elo_ffa, save profiles)
-                             # Add print statements within this block similar to 1v1
                              print("    Processing FFA Elo...") # DEBUG
                              try:
                                 ratings_ranks = []
@@ -1469,14 +1434,11 @@ def enter_match_results(request, match_id):
                  messages.error(request, f"An unexpected error occurred: {str(e)}")
                  formset.non_form_errors().append(f"An unexpected error occurred: {str(e)}")
                  print(f"!!! Unexpected Error inside try block: {e}") # DEBUG
-                 # Consider logging the full traceback here for debugging
-                 # Transaction automatically rolls back here
 
         else: # Formset is invalid
              messages.error(request, "Please correct the errors in the form(s) below.")
              print(f"!!! Formset is invalid: {formset.errors}") # DEBUG
              print(f"    Non-form errors: {formset.non_form_errors()}") # DEBUG
-             # Transaction doesn't commit automatically, but no changes were made if formset invalid
 
     else: # GET request
         print("Processing GET request.") # DEBUG
@@ -1493,9 +1455,9 @@ def enter_match_results(request, match_id):
 
 
 @login_required
-@require_POST # Ensure this view only accepts POST requests
-@csrf_exempt # Or handle CSRF token properly
-@transaction.atomic # Good practice for DB modifications
+@require_POST
+@csrf_exempt
+@transaction.atomic
 def toggle_slot_availability(request):
     try:
         data = json.loads(request.body)
@@ -1505,7 +1467,6 @@ def toggle_slot_availability(request):
         is_selected = data.get('is_selected') # boolean: true if adding, false if removing
 
         # --- Basic Input Validation ---
-        # ...(keep your existing validation)...
         try:
             selected_date = date.fromisoformat(selected_date_str)
             hours, minutes = map(int, time_slot_str.split(':'))
@@ -1514,18 +1475,16 @@ def toggle_slot_availability(request):
                  raise ValueError("Time slot outside allowed range (08:00-23:45)")
         except (ValueError, TypeError) as e:
              return JsonResponse({"message": f"Invalid date or time format: {e}"}, status=400)
-        # ...(keep checking activity_type)...
-        # --- End Validation ---
+
 
         # Calculate naive datetime objects first
         naive_start_datetime = datetime.combine(selected_date, slot_start_time)
         naive_end_datetime = naive_start_datetime + timedelta(minutes=15)
 
         # Make them timezone-aware using Django's current default timezone
-        # You might need to adjust if you have specific timezone requirements
         start_datetime = timezone.make_aware(naive_start_datetime)
         end_datetime = timezone.make_aware(naive_end_datetime)
-        # --- END DATETIME FIX ---
+
 
         if is_selected:
             # User wants to ADD or ensure this slot is available
@@ -1533,7 +1492,6 @@ def toggle_slot_availability(request):
                 user=request.user,
                 booking_type=activity_type,
                 start_time=start_datetime, # Use aware datetime
-                # Consider adding end_time to the filter if start_time isn't unique enough
                 # end_time=end_datetime,
                 defaults={
                     'end_time': end_datetime, # Use aware datetime
@@ -1549,8 +1507,6 @@ def toggle_slot_availability(request):
                 user=request.user,
                 booking_type=activity_type,
                 start_time=start_datetime, # Use aware datetime
-                # Optionally match end_time too for safety
-                # end_time=end_datetime
             ).delete()
             action = "deleted" if deleted_count > 0 else "not found (already deleted)"
             print(f"DEBUG: Availability slot {action} for {request.user.username} at {start_datetime}")

@@ -21,8 +21,7 @@ admin.site.register(MatchAvailability, MatchAvailabilityAdmin)
 admin.site.register(UserProfile, userProfileAdmin)
 
 
-# Add the new models to the admin interface (optional but helpful)
-# In bookings/admin.py:
+
 
 class CompetitionParticipantInline(admin.TabularInline):
     model = CompetitionParticipant
@@ -38,4 +37,4 @@ class CompetitionAdmin(admin.ModelAdmin):
     current_participants.short_description = 'Participants'
 
 admin.site.register(Competition, CompetitionAdmin)
-admin.site.register(CompetitionParticipant) # You might not need this if using inline
+admin.site.register(CompetitionParticipant)
