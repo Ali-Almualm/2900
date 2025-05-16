@@ -128,7 +128,7 @@
                          -
                     {% endif %}
                 </td>
-                 {# Keep debug info if helpful #}
+                 {# debug info #}
                  <!-- <td>
                     <p>Match ID: {{ match.id }}</p>
                     <p>Match Creator ID: {{ match.user_id }}</p>
@@ -170,17 +170,13 @@ function confirmResult(matchId, result) {
     })
     .then(data => {
         // Display the message from the backend (success or specific info/warning)
-        // Replace alert with a more user-friendly notification if possible
         alert(data.message);
-        // Always reload to reflect the latest state from the database
         location.reload();
     })
     .catch(error => {
         console.error("Error:", error);
         // Display error to the user
         alert(`Error: ${error.message}`);
-        // Optionally reload even on error, or handle differently
-        // location.reload();
     });
 }
 </script>

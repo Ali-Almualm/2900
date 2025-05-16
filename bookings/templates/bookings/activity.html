@@ -145,8 +145,6 @@
 
     function closeBookingForm() {
       document.getElementById("booking-overlay").style.display = "none";
-      // Don't reset if values are populated dynamically
-      // document.getElementById("booking-form").reset();
     }
 
     // Event listener for the booking form submission
@@ -158,8 +156,6 @@
           let bookingData = {};
           formData.forEach((value, key) => bookingData[key] = value);
 
-          // Ensure date is included
-          // bookingData['booking_date'] = document.getElementById("selected-date-display").value;
 
           fetch("{% url 'api_book' %}", {
             method: "POST",
@@ -234,7 +230,7 @@
         });
     }
 
-    // --- Drag Select Logic (Keep if you use it) ---
+    // --- Drag Select Logic ----
     document.addEventListener('DOMContentLoaded', function() {
         let isDragging = false;
         let selectedSlots = []; // Stores the DOM elements
@@ -272,12 +268,6 @@
                     if (!cell.classList.contains('selected-slot') &&
                         cell.closest('tr').querySelector('.status-available') &&
                         selectedSlots.length < 8) { // Limit selection to 8 slots (2 hours)
-
-                        // Basic continuity check (optional, can be complex)
-                        // This simple check assumes rows are contiguous in time
-                        // let lastSelectedTime = selectedSlots[selectedSlots.length - 1].dataset.time;
-                        // let currentTime = cell.dataset.time;
-                        // Add logic here to ensure currentTime is immediately after lastSelectedTime
 
                         cell.classList.add('selected-slot');
                         selectedSlots.push(cell);

@@ -212,7 +212,7 @@
 
             messageOverlay.style.display = 'flex'; // Show modal
         }
-        // --- END Message Modal Function ---
+  
 
 
         // --- Function to Show Custom Confirmation Modal ---
@@ -258,7 +258,6 @@
 
             confirmOverlay.style.display = 'flex'; // Show modal
         }
-        // --- END Confirmation Modal Function ---
 
 
         // --- Date Change Function ---
@@ -269,7 +268,6 @@
 
 
         // --- MODIFIED Booking Confirmation Modal Logic ---
-        // Global variable to store details for the confirmation action
         let currentBookingDetails = { timeSlot: null, dateSlot: null, activity: null };
 
         function openBookingForm(timeSlot, dateSlot, activity) {
@@ -283,7 +281,6 @@
             const dateEl = document.getElementById("confirm-booking-date");
             const timeEl = document.getElementById("confirm-booking-time");
             const activityEl = document.getElementById("confirm-booking-activity");
-            // const userEl = document.getElementById("confirm-booking-user"); // Username already shown via template
 
             if(dateEl) dateEl.textContent = dateSlot;
             if(timeEl) timeEl.textContent = timeSlot;
@@ -369,11 +366,9 @@
                  // Use message modal for error feedback
                  showMessageModal(`Booking failed: ${error.message}`, false);
              });
-        }
-        // --- END Booking Confirmation Modal Logic ---
 
 
-        // --- Cancel Booking Function (Uses Confirmation Modal) ---
+        // --- Cancel Booking Function ---
         function cancelBooking(bookingId, userId) {
              const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
              if (!csrfToken) { showMessageModal('CSRF token not found. Cannot cancel.', false); return; }
@@ -396,9 +391,8 @@
                       console.error("Cancellation Error:", error);
                       showMessageModal(`Cancellation failed: ${error.message}`, false); // Show error in message modal
                  });
-             }); // End showConfirmModal
+             }); 
         }
-        // --- End Cancel Booking Function ---
 
 
         // --- Competition Join/Leave Functions (Still use alert/confirm) ---
@@ -416,9 +410,8 @@
                     method: "POST",
                     headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
                 })
-                .then(response => response.json()) // Assuming your backend always returns JSON
+                .then(response => response.json())
                 .then(data => {
-                    // Use showMessageModal for feedback
                     showMessageModal(data.message, data.success, () => {
                         if (data.success) { location.reload(); }
                     });
@@ -455,7 +448,7 @@
                 });
             });
         }
-        // --- End Competition Functions ---
+
 
 
         // --- Tab Switching Logic ---
@@ -479,7 +472,6 @@
                 });
             } else { console.warn("Tab navigation elements not found."); }
         });
-        // --- End Tab JS ---
 
     </script>
 
